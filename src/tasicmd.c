@@ -1,0 +1,516 @@
+#include "tasicmd.h"
+
+
+#include <string.h>
+#include <stdarg.h>
+
+
+#define TCMD_MIN_TRANSIENT_BUFFER_SIZE 128u
+
+
+
+
+static const char* TCMD_DEFAULT_PROMPT = "(TCMD)> ";
+static const char* TCMD_DEFAULT_INTRO  = "TASICMD: A simple CLI used for embedded system";
+
+
+
+typedef enum
+{
+    TCMD_INT8   = 'b', // int8_t*	Signed 8bit integer
+    TCMD_UINT8  = 'B', // uint8_t*	Unsigned 8bit integer
+    TCMD_INT16  = 'h', // int16_t*	Signed 16bit integer
+    TCMD_UINT16 = 'H', // uint16_t*	Unsigned 16bit integer
+    TCMD_INT32  = 'i', // int32_t*	Signed 32bit integer
+    TCMD_UINT32 = 'I', // uint32_t*	Unsigned 32bit integer
+#if TCMD_USE_64BIT_PRECISION
+    TCMD_INT64  = 'l', // int64_t*	Signed 64bit integer
+    TCMD_UINT64 = 'L', // uint64_t*	Unsigned 64bit integer
+#endif
+    TCMD_FLOAT  = 'f', // float*	Float 
+    TCMD_STRING = 's', // char**	String (return the pointer to the token)
+    TCMD_BOOL   = 'z', // bool*	    Boolean (0/1, on/off, true/false can be used)
+    TCMD_CUSTOM = 'c', //           Custom parser    
+} TCMD_FormatSpecifier;
+
+
+
+typedef struct TCMD_CmdEntry
+{
+    const char* name;
+    const char* help;
+    const char* usage;
+    
+    void* userdata;
+
+    TCMD_CmdCallback callback;
+
+    struct TCMD_CmdEntry* next;
+} TCMD_CmdEntry;
+
+
+
+
+typedef struct
+{
+    const char* prompt;
+    const char* intro;
+
+    TCMD_CmdIOConfig io;
+
+    uint8_t* workspace;
+    size_t workspace_size;
+    size_t persistent_offset;
+
+    char line_buffer[TASICMD_MAX_LINE_LENGTH];
+    size_t line_pos;
+
+
+    TCMD_CustomParser custom_parser;
+
+
+    TCMD_CmdEntry *command_head;
+} TCMD_Module;
+
+
+
+
+#if TCMD_USE_64BIT_PRECISION
+    typedef uint64_t tcmd_num_t;
+    #define TCMD_NUM_MAX UINT64_MAX
+#else
+    typedef uint32_t tcmd_num_t;
+    #define TCMD_NUM_MAX UINT32_MAX
+#endif
+
+
+
+
+
+static const char* 
+_tcmd_parse_prepare(const char* str, int* base)
+{
+    if (str[0] == '0')
+    {
+        if (str[1] == 'x' || str[1] == 'X')
+        {
+            *base = 16;
+            
+            return str + 2;
+        }
+        else if (str[1] == 'b' || str[1] == 'B')
+        {
+            *base = 2;
+
+            return str + 2;
+        }
+        else if (str[1] >= 0 && str[1] <= 7)
+        {
+            *base = 8;
+
+            return str + 1;
+        }
+    }
+
+    *base = 10;
+
+    return str;
+}
+
+
+static int 
+_tcmd_char_to_int(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+
+    return -1;
+}
+
+
+static TCMD_Result 
+_tcmd_str_to_num(const char* str, tcmd_num_t* num)
+{
+    int base;
+
+    const char* ptr = _tcmd_parse_prepare(str, &base);
+
+    tcmd_num_t result = 0;
+
+    if (*ptr == '\0') return TCMD_ERR_PARSE_EMPTY;
+
+    while (*ptr != '\0')
+    {
+        int val = _tcmd_char_to_int(*ptr);
+
+        if (val < 0 || val >= base) return TCMD_ERR_PARSE_INVALID_CHAR;
+
+        if (result > (TCMD_NUM_MAX - val) / base)
+        {
+            return TCMD_ERR_OVERFLOW;
+        }
+
+        result = result * base + val;
+
+        ptr++;
+    }
+
+    *num = result;
+
+    return TCMD_ERR;
+}
+
+
+
+#define TCMD_IS_NEGATIVE(tok) ({            \
+    __typeof__(tok) *_p_tok = &(tok);       \
+    bool _negative = false;                 \
+    if ((*_p_tok)[0] == '-') {              \
+        _negative = true;                   \
+        (*_p_tok)++;                        \
+    } else if ((*_p_tok)[0] == '+') {       \
+        (*_p_tok)++;                        \
+    }                                       \
+    _negative;                              \
+})
+
+#define TCMD_HAS_MINUS(tok) ({                      \
+    __typeof__(tok) *_p_tok = &(tok);               \
+    TCMD_Result _result = TCMD_OK;                  \
+    if ((*_p_tok)[0] == '-') {                      \
+        _result = TCMD_ERR_PARSE_NEGATIVE_UNSIGNED; \
+    } else if ((*_p_tok)[0] == '+') {               \
+        (*_p_tok)++;                                \
+    }                                               \
+    _result;                                        \
+})
+
+
+#define TCMD_VALIDATE_RANGE(val, max)                           \
+        if ((val) > (max)) return TCMD_ERR_PARSE_OUT_OF_RANGE;  \
+
+
+
+static inline TCMD_Result
+_tcmd_parse_unsigned_generic(const char** p_token, tcmd_num_t* out, tcmd_num_t max_range)
+{
+    TCMD_Result res;
+
+    if ((res = TCMD_HAS_MINUS(*p_token))        != TCMD_OK) return res;
+    if ((res = _tcmd_str_to_num(*p_token, out)) != TCMD_OK) return res;
+
+    TCMD_VALIDATE_RANGE(*out, UINT16_MAX);
+
+    return TCMD_OK;
+}
+
+
+
+static TCMD_Result
+_tcmd_parse_int8(const char* token, int8_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+
+    bool is_negative = TCMD_IS_NEGATIVE(token);
+
+
+    tcmd_num_t val = 0;
+
+
+    TCMD_Result status = _tcmd_str_to_num(token, &val);
+
+    if (status != TCMD_OK) return status;
+
+    if (is_negative)
+    {
+        if (val > 128) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+
+        *out = (int8_t) (-((int16_t)val));
+    }
+    else
+    {
+        if (val > 127) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+
+        *out = (int8_t) val;
+    }
+
+    return TCMD_OK;
+}
+
+
+static TCMD_Result
+_tcmd_parse_uint8(const char* token, uint8_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+
+    if (token[0] == '-') return TCMD_ERR_PARSE_NEGATIVE_UNSIGNED;
+    if (token[0] == '+') token++;
+    
+
+    tcmd_num_t val = 0;
+
+
+    TCMD_Result status = _tcmd_str_to_num(token, &val);
+
+    if (status != TCMD_OK) return status;
+
+
+    if (val > UINT8_MAX) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+    
+    *out = (uint8_t) val;
+
+    return TCMD_OK;
+}
+
+
+
+static TCMD_Result
+_tcmd_parse_int16(const char* token, int16_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    bool is_negative = TCMD_IS_NEGATIVE(token);
+
+
+    tcmd_num_t val = 0;
+
+
+    TCMD_Result status = _tcmd_str_to_num(token, &val);
+
+    if (status != TCMD_OK) return status;
+
+    if (is_negative)
+    {
+        if (val > 32768) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+
+        *out = (int16_t) (-((int32_t)val));
+    }
+    else
+    {
+        if (val > 32767) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+
+        *out = (int16_t) val;
+    }
+
+    return TCMD_OK;
+}
+
+
+
+
+static TCMD_Result
+_tcmd_parse_uint16(const char* token, uint16_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    tcmd_num_t val = 0;
+
+    TCMD_Result result = _tcmd_parse_unsigned_generic(token, &val, UINT16_MAX);
+    
+    if (result == TCMD_OK)
+    {
+        *out = (uint16_t) val;
+    };
+
+    return result;
+}
+
+
+static TCMD_Result
+_tcmd_parse_uint32(const char* token, uint32_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+
+    if (token[0] == '-') return TCMD_ERR_PARSE_NEGATIVE_UNSIGNED;
+    if (token[0] == '+') token++;
+    
+
+    tcmd_num_t val = 0;
+
+
+    TCMD_Result status = _tcmd_str_to_num(token, &val);
+
+    if (status != TCMD_OK) return status;
+
+
+    if (val > UINT32_MAX) return TCMD_ERR_PARSE_OUT_OF_RANGE;
+    
+    *out = (uint32_t) val;
+
+    return TCMD_OK;
+}
+
+
+#if TCMD_USE_64BIT_PRECISION
+static TCMD_Result
+_tcmd_parse_uint64(const char* token, uint32_t* out);
+
+static TCMD_Result
+_tcmd_parse_uint64(const char* token, uint32_t* out);
+
+#endif
+
+
+
+static TCMD_Module _tcmd;
+
+
+TCMD_Result 
+tcmd_init (const TCMD_ModuleConfig* config)
+{
+    if ((config == NULL)                || 
+        (config->workspace == NULL )    || 
+        (config->workspace_size == 0)   || 
+        (config->io == NULL)            ||
+        (config->io->read == NULL)      ||
+        (config->io->write == NULL)
+    )
+    {
+        return TCMD_ERR_BAD_ARGS;
+    }
+
+    memset(&_tcmd, 0, sizeof(_tcmd));
+
+
+    _tcmd.prompt = (config->prompt) ? config->prompt : TCMD_DEFAULT_PROMPT;
+    _tcmd.intro  = (config->intro ) ? config->intro  : TCMD_DEFAULT_INTRO;
+
+
+    _tcmd.io.read   = config->io->read;
+    _tcmd.io.write  = config->io->write;
+    
+
+    _tcmd.workspace          = config->workspace;
+    _tcmd.workspace_size     = config->workspace_size;
+    _tcmd.persistent_offset  = 0;
+
+    _tcmd.line_pos = 0;
+
+
+    _tcmd.command_head = NULL;
+
+
+    return TCMD_OK;
+}
+
+
+
+
+
+TCMD_Result
+tcmd_register_command (
+    const char* name,
+    const char* help,
+    const char* usage,
+    TCMD_CmdCallback callback,
+    void* userdata
+)
+{
+    if ((name == NULL) || (help == NULL) || (usage == NULL) || (callback == NULL))
+    {
+        return TCMD_ERR_BAD_ARGS;
+    }
+
+
+    size_t entry_size       = sizeof(TCMD_CmdEntry);
+    const size_t alignament = sizeof(uintptr_t);
+
+
+    size_t aligned_offset = (_tcmd.persistent_offset + (alignament - 1)) & ~(alignament - 1);
+
+
+    if ((aligned_offset + entry_size + TCMD_MIN_TRANSIENT_BUFFER_SIZE) > _tcmd.workspace_size)
+    {
+        return TCMD_ERR_NOT_ENOUGH_SPACE;
+    }
+
+
+    TCMD_CmdEntry *new_cmd = (TCMD_CmdEntry *) (_tcmd.workspace + aligned_offset);
+
+
+    new_cmd->name       = name;
+    new_cmd->help       = help;
+    new_cmd->usage      = usage;
+    new_cmd->callback   = callback;
+    new_cmd->userdata   = userdata;
+
+
+    new_cmd->next       = _tcmd.command_head;
+    _tcmd.command_head  = new_cmd;
+
+
+    _tcmd.persistent_offset += aligned_offset + entry_size;
+
+
+    return TCMD_OK;
+}
+
+
+
+
+
+
+TCMD_Result 
+tcmd_set_custom_parser(TCMD_CustomParser parser)
+{
+    if (parser == NULL)
+    {
+        return TCMD_ERR_BAD_ARGS;
+    }
+
+    _tcmd.custom_parser = parser;
+
+    return TCMD_OK;
+}
+
+
+
+
+TCMD_Result 
+tcmd_unpack(int argc, char** argv, char* fmt, ...)
+{
+    TCMD_Result result = TCMD_OK;
+
+    va_list args;
+    va_start(args, fmt);
+
+
+
+
+
+    va_end(args);
+
+    return result;
+}
+
+
+
+
+__attribute__((weak)) void 
+tcmd_on_unknown_command(void)
+{
+    return;
+}
+
+
+
+
+__attribute__((weak)) void 
+tcmd_pre_execute(void)
+{
+    return;
+}
+
+
+
+__attribute__((weak)) void 
+tcmd_post_execute(void)
+{
+    return;
+}
+
+
