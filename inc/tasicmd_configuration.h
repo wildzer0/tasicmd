@@ -1,14 +1,21 @@
 #ifndef TASICMD_CONFIGURATION_H_
 #define TASICMD_CONFIGURATION_H_
 
-#ifndef TASICMD_LINE_BUFFER_SIZE
-    #define TASICMD_LINE_BUFFER_SIZE (128u)
+
+#ifndef TCMD_LINE_BUFFER_SIZE
+    #define TCMD_LINE_BUFFER_SIZE (128u)
 #endif
 
 
 
-#ifndef TASICMD_MAX_ARGS
-#define TASICMD_MAX_ARGS (10u)
+#ifndef TCMD_HISTORY_SIZE
+#define TCMD_HISTORY_SIZE (20)
+#endif 
+
+
+
+#ifndef TCMD_MAX_ARGS
+    #define TCMD_MAX_ARGS (10u)
 #endif
 
 
@@ -26,7 +33,7 @@
 
 
 #ifndef TCMD_ENABLE_COMMAND_ECHO
-#define TCMD_ENABLE_COMMAND_ECHO (0u)
+    #define TCMD_ENABLE_COMMAND_ECHO (1u)
 #endif
 
 

@@ -12,36 +12,56 @@
 
 
 static const char* TCMD_DEFAULT_PROMPT = "(TCMD)> ";
-static const char* TCMD_DEFAULT_INTRO  = "TASICMD: A simple CLI used for embedded system";
+
+static const char* TCMD_DEFAULT_INTRO  =
+"████████╗ █████╗ ███████╗██╗ ██████╗███╗   ███╗██████╗ \n\r"
+"╚══██╔══╝██╔══██╗██╔════╝██║██╔════╝████╗ ████║██╔══██╗\n\r"
+"   ██║   ███████║███████╗██║██║     ██╔████╔██║██║  ██║\n\r"
+"   ██║   ██╔══██║╚════██║██║██║     ██║╚██╔╝██║██║  ██║\n\r"
+"   ██║   ██║  ██║███████║██║╚██████╗██║ ╚═╝ ██║██████╔╝\n\r"
+"   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝ ╚═════╝╚═╝     ╚═╝╚═════╝ \n\r"
+" Made with ♥ by MDR                                    \n\r";
 
 
 
 typedef enum
 {
-    TCMD_INT8   = 'b', // int8_t*	Signed 8bit integer
-    TCMD_UINT8  = 'B', // uint8_t*	Unsigned 8bit integer
-    TCMD_INT16  = 'h', // int16_t*	Signed 16bit integer
-    TCMD_UINT16 = 'H', // uint16_t*	Unsigned 16bit integer
-    TCMD_INT32  = 'i', // int32_t*	Signed 32bit integer
-    TCMD_UINT32 = 'I', // uint32_t*	Unsigned 32bit integer
+    TCMD_INT8   = 'b', // int8_t*   Signed 8bit integer
+    TCMD_UINT8  = 'B', // uint8_t*  Unsigned 8bit integer
+    TCMD_INT16  = 'h', // int16_t*  Signed 16bit integer
+    TCMD_UINT16 = 'H', // uint16_t* Unsigned 16bit integer
+    TCMD_INT32  = 'i', // int32_t*  Signed 32bit integer
+    TCMD_UINT32 = 'I', // uint32_t* Unsigned 32bit integer
     
 #if TCMD_USE_64BIT_PRECISION
-    TCMD_INT64  = 'l', // int64_t*	Signed 64bit integer
-    TCMD_UINT64 = 'L', // uint64_t*	Unsigned 64bit integer
+    TCMD_INT64  = 'l', // int64_t*  Signed 64bit integer
+    TCMD_UINT64 = 'L', // uint64_t* Unsigned 64bit integer
 #endif
 
 #if TCMD_USE_FLOAT
-    TCMD_FLOAT  = 'f', // float*	Float 
+    TCMD_FLOAT  = 'f', // float*    Float 
 #endif
 
 #if TCMD_USE_FLOAT && TCMD_USE_64BIT_PRECISION
-    TCMD_DOUBLE = 'd', // float*	Double 
+    TCMD_DOUBLE = 'd', // double*   Double 
 #endif
 
-    TCMD_STRING = 's', // char**	String (return the pointer to the token)
+    TCMD_STRING = 's', // char**    String (return the pointer to the token)
     TCMD_BOOL   = 'z', // bool*	    Boolean (0/1, on/off, true/false can be used)
     TCMD_CUSTOM = 'c', //           Custom parser    
 } TCMD_FormatSpecifier;
+
+
+
+typedef enum
+{
+    TCMD_KEY_NONE,
+    TCMD_KEY_CHAR,
+    TCMD_KEY_UP,
+    TCMD_KEY_DOWN,
+    TCMD_KEY_BACKSPACE,
+    TCMD_KEY_ENTER
+} TCMD_KeyEvent;
 
 
 
@@ -61,6 +81,18 @@ typedef struct TCMD_CmdEntry
 
 
 
+
+typedef struct
+{
+    char lines[TCMD_HISTORY_SIZE][TCMD_LINE_BUFFER_SIZE];
+    int head;
+    int count;
+    int browse;
+} TCMD_History;
+
+
+
+
 typedef struct
 {
     const char* prompt;
@@ -72,8 +104,12 @@ typedef struct
     size_t workspace_size;
     size_t persistent_offset;
 
-    char line_buffer[TASICMD_LINE_BUFFER_SIZE];
+
+    char line_buffer[TCMD_LINE_BUFFER_SIZE];
     size_t line_pos;
+
+
+    TCMD_History history;
 
 
     TCMD_CustomParser custom_parser;
@@ -96,6 +132,58 @@ typedef struct
 
 static TCMD_Module _tcmd;
 
+
+
+static void
+_tcmd_write_str(const char* s)
+{
+    if (s == NULL) return;
+
+    while (*s != '\0')
+    {
+        _tcmd.io.write(*s++);
+    }
+}
+
+
+static void
+_tcmd_print_intro(void)
+{
+    _tcmd_write_str("\n\r");
+    _tcmd_write_str(_tcmd.intro);
+}
+
+
+static void
+_tcmd_print_prompt(void)
+{
+    _tcmd_write_str("\n\r");
+    _tcmd_write_str(_tcmd.prompt);
+}
+
+
+static void
+_tcmd_clear_line_visually(void)
+{
+    while (_tcmd.line_pos > 0)
+    {
+        _tcmd_write_str("\b \b");
+        _tcmd.line_pos--;
+    }
+
+    _tcmd.line_buffer[0] = '\0';
+}
+
+
+static int 
+_tcmd_char_to_int(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+
+    return -1;
+}
                                             
 
 static const char* 
@@ -126,17 +214,6 @@ _tcmd_parse_prepare(const char* str, int* base)
     *base = 10;
 
     return str;
-}
-
-
-static int 
-_tcmd_char_to_int(char c)
-{
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-
-    return -1;
 }
 
 
@@ -547,31 +624,77 @@ _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
 
 
 
-static void
-_tcmd_write_str(const char* s)
-{
-    if (s == NULL) return;
 
-    while (*s != '\0')
+
+static void
+_tcmd_history_save(const char* line, size_t len)
+{
+    if (line[0] == '\0') return;
+
+    strncpy(_tcmd.history.lines[_tcmd.history.head], line, len);
+
+    _tcmd.history.head = (_tcmd.history.head + 1) % TCMD_HISTORY_SIZE;
+
+    if (_tcmd.history.count < TCMD_HISTORY_SIZE)
     {
-        _tcmd.io.write(*s++);
+        _tcmd.history.count++;
     }
+
+    _tcmd.history.browse = -1;
+}
+
+
+
+static void
+_tcmd_history_reset_browse(void)
+{
+    _tcmd.history.browse = -1;
 }
 
 
 static void
-_tcmd_print_intro(void)
+_tcmd_render_history_line(const char* line)
 {
-    _tcmd_write_str("\n\r");
-    _tcmd_write_str(_tcmd.intro);
+    _tcmd_clear_line_visually();
+
+
+    strncpy(_tcmd.line_buffer, line, TCMD_LINE_BUFFER_SIZE - 1);
+    _tcmd.line_pos = strlen(_tcmd.line_buffer);
+
+    _tcmd_write_str(_tcmd.line_buffer);
 }
 
 
 static void
-_tcmd_print_prompt(void)
+_tcmd_history_recall(bool up)
 {
-    _tcmd_write_str("\n\r");
-    _tcmd_write_str(_tcmd.prompt);
+    if (_tcmd.history.count == 0) return;
+
+    
+    if (up)
+    {
+        if (_tcmd.history.browse < (_tcmd.history.count - 1))
+        {
+            _tcmd.history.browse++;
+        }
+    }
+    else
+    {
+        if (_tcmd.history.browse > 0) {
+            _tcmd.history.browse--;
+        } else {
+            _tcmd.history.browse = -1;
+            _tcmd_clear_line_visually();
+            _tcmd.line_buffer[0] = '\0';
+            _tcmd.line_pos = 0;
+            return;
+        }
+    }
+
+    int index = (_tcmd.history.head - 1 - _tcmd.history.browse + TCMD_HISTORY_SIZE) % TCMD_HISTORY_SIZE;
+
+
+    _tcmd_render_history_line(_tcmd.history.lines[index]);
 }
 
 
@@ -585,7 +708,7 @@ _tcmd_execute_line(void)
 
     TCMD_Result res;
 
-    if ((res = _tcmd_tokenizer(_tcmd.line_buffer, argv, TASICMD_MAX_ARGS, &argc)) != TCMD_OK) return;
+    if ((res = _tcmd_tokenizer(_tcmd.line_buffer, argv, TCMD_MAX_ARGS, &argc)) != TCMD_OK) return;
 
     if (argc == 0) return;
 
@@ -598,6 +721,7 @@ _tcmd_execute_line(void)
         if (strcmp(argv[0], entry->name) == 0)
         {
             entry->callback(argc, argv, entry->userdata);
+
             found = true;
             break;
         }
@@ -605,16 +729,117 @@ _tcmd_execute_line(void)
         entry = entry->next;
     }
 
-    memset(&_tcmd.line_buffer[0], 0, _tcmd.line_pos);
-    
-    _tcmd.line_pos = 0;
+    if (found == false)
+    {
+        tcmd_default();
 
-    if (found == false) return;
+        return;
+    }
+}
+
+
+TCMD_KeyEvent
+_tcmd_process_input(char c, char* out_char)
+{
+    static enum { STATE_IDLE, STATE_ESC, STATE_BRACKET } state = STATE_IDLE;
+
+    switch(state)
+    {
+    case STATE_IDLE:
+    {
+        if (c == 0x1B) { state = STATE_ESC; return TCMD_KEY_NONE; }
+        if (c == 0x08 || c == 0x7F) return TCMD_KEY_BACKSPACE;
+        if (c == '\r' || c == '\n') return TCMD_KEY_ENTER;
+
+        *out_char = c;
+
+        return TCMD_KEY_CHAR;
+    } break;
+
+    case STATE_ESC:
+    {
+        state = (c == '[') ? STATE_BRACKET : STATE_IDLE;
+
+        return TCMD_KEY_NONE;
+    } break;
+
+    case STATE_BRACKET:
+    {
+        state = STATE_IDLE;
+
+        if (c == 'A') return TCMD_KEY_UP;
+        if (c == 'B') return TCMD_KEY_DOWN;
+
+        return TCMD_KEY_NONE;
+    } break;
+
+    default:
+    {
+        state = STATE_IDLE;
+        return TCMD_KEY_NONE;
+    }break;
+    }
+
 }
 
 
 
+static void
+_tcmd_handle_char(char c)
+{
+    if (_tcmd.line_pos < TCMD_LINE_BUFFER_SIZE - 1)
+    {
+        _tcmd.line_buffer[_tcmd.line_pos++] = c;
 
+    #if TCMD_ENABLE_COMMAND_ECHO
+        _tcmd.io.write(c); /* Echo */
+    #endif
+    }
+}
+
+
+static void
+_tcmd_handle_backspace(void)
+{
+    if (_tcmd.line_pos > 0)
+    {
+        _tcmd.line_buffer[--_tcmd.line_pos] = '\0';
+        _tcmd.io.write(0x08); _tcmd.io.write(' '); _tcmd.io.write(0x08);
+    }
+}
+
+
+static void
+_tcmd_handle_execute(void)
+{
+    if (_tcmd.line_pos > 0)
+    {
+        // Save linebuffer into the history
+        _tcmd_history_save(_tcmd.line_buffer, _tcmd.line_pos);
+
+        // Send CRLF
+        _tcmd.io.write('\r');
+        _tcmd.io.write('\n');
+    
+        // Call the pre execute
+        tcmd_pre_execute();
+    
+        // Execute
+        _tcmd_execute_line();
+    
+        // Call the post execute
+        tcmd_post_execute();
+    
+        // Print the prompt
+        _tcmd_print_prompt();
+    }
+
+    memset(&_tcmd.line_buffer[0], 0, _tcmd.line_pos);
+    
+    _tcmd.line_pos = 0;
+
+    _tcmd_history_reset_browse();
+}
 
 
 
@@ -711,8 +936,6 @@ tcmd_register_command (
 
     return TCMD_OK;
 }
-
-
 
 
 
@@ -852,37 +1075,46 @@ tcmd_unpack(int argc, char** argv, char* fmt, ...)
 
 
 
-void tcmd_run(void)
+void 
+tcmd_run(void)
 {
-    char c;
+    char raw_c;
+    char processed_c;
 
-    if (_tcmd.io.read(&c) == false) return;
+    if (_tcmd.io.read(&raw_c) == false) return;
 
-    if (c == '\r' || c == '\n')
+
+    TCMD_KeyEvent key_evt = _tcmd_process_input(raw_c, &processed_c);
+
+    switch(key_evt)
     {
-        _tcmd_execute_line();
-        _tcmd_print_prompt();
-        return;
-    }
-
-    if (c == 0x08 || c == 0x7F)
-    {
-        if (_tcmd.line_pos > 0)
+        case TCMD_KEY_CHAR:
         {
-            _tcmd.line_pos--;
-            _tcmd.io.write(0x08); _tcmd.io.write(' '); _tcmd.io.write(0x08);
-        }
+            _tcmd_handle_char(processed_c);
+        } break;
 
-        return;
-    }
+        case TCMD_KEY_BACKSPACE:
+        {
+            _tcmd_handle_backspace();
+        } break;
 
-    if (_tcmd.line_pos < TASICMD_LINE_BUFFER_SIZE - 1)
-    {
-        _tcmd.line_buffer[_tcmd.line_pos++] = c;
+        case TCMD_KEY_ENTER:
+        {
+            _tcmd_handle_execute();
+        } break;
 
-#if TCMD_ENABLE_COMMAND_ECHO
-        _tcmd.io.write(c); /* Echo */
-#endif
+        case TCMD_KEY_UP:
+        {
+            _tcmd_history_recall(true);
+        } break;
+
+        case TCMD_KEY_DOWN:
+        {
+            _tcmd_history_recall(false);
+        } break;
+
+        default: break;
+
     }
 }
 
@@ -892,7 +1124,7 @@ void tcmd_run(void)
 __attribute__((weak)) void 
 tcmd_default(void)
 {
-    return;
+    _tcmd_write_str("Command not found!");
 }
 
 
