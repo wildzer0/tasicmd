@@ -119,7 +119,7 @@ void tcmd_run(void);
 
 
 // Hooks
-void tcmd_on_unknown_command(void);
+void tcmd_default(void);
 void tcmd_pre_execute(void);
 void tcmd_post_execute(void);
 

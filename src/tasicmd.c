@@ -96,15 +96,7 @@ typedef struct
 
 static TCMD_Module _tcmd;
 
-
-
-// ██████╗  █████╗ ██████╗ ███████╗███████╗██████╗ 
-// ██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝██╔══██╗
-// ██████╔╝███████║██████╔╝███████╗█████╗  ██████╔╝
-// ██╔═══╝ ██╔══██║██╔══██╗╚════██║██╔══╝  ██╔══██╗
-// ██║     ██║  ██║██║  ██║███████║███████╗██║  ██║
-// ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
-                                                
+                                            
 
 static const char* 
 _tcmd_parse_prepare(const char* str, int* base)
@@ -513,12 +505,6 @@ _tcmd_parse_bool(const char* token, bool* out)
 
 
 
-// ████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██╗███████╗███████╗██████╗ 
-// ╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██║╚══███╔╝██╔════╝██╔══██╗
-//    ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║██║  ███╔╝ █████╗  ██████╔╝
-//    ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║██║ ███╔╝  ██╔══╝  ██╔══██╗
-//    ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║██║███████╗███████╗██║  ██║
-//    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
 
 static TCMD_Result
 _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
@@ -893,7 +879,7 @@ void tcmd_run(void)
     if (_tcmd.line_pos < TASICMD_LINE_BUFFER_SIZE - 1)
     {
         _tcmd.line_buffer[_tcmd.line_pos++] = c;
-        
+
 #if TCMD_ENABLE_COMMAND_ECHO
         _tcmd.io.write(c); /* Echo */
 #endif
@@ -904,7 +890,7 @@ void tcmd_run(void)
 
 
 __attribute__((weak)) void 
-tcmd_on_unknown_command(void)
+tcmd_default(void)
 {
     return;
 }
