@@ -22,6 +22,8 @@ typedef enum
     TCMD_ERR_PARSE_OUT_OF_RANGE,
     TCMD_ERR_PARSE_NEGATIVE_UNSIGNED,
     TCMD_ERR_PARSE_CUSTOM_PARSER_IS_ABSENT,
+    TCMD_ERR_TOKENIZER_EMPTY_STRING,
+    TCMD_ERR_TOKENIZER_TOO_MANY_ARGS,
     TCMD_ERR_OVERFLOW
 } TCMD_Result;
 
@@ -47,6 +49,7 @@ typedef struct
 
 
 typedef void (*TCMD_CmdCallback)(int argc, char** argv, void* userdata);
+
 typedef TCMD_Result (*TCMD_CustomParser)(const char* token, void* out);
 
 

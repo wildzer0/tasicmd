@@ -95,7 +95,13 @@ typedef struct
 
 
 
-
+// ██████╗  █████╗ ██████╗ ███████╗███████╗██████╗ 
+// ██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝██╔══██╗
+// ██████╔╝███████║██████╔╝███████╗█████╗  ██████╔╝
+// ██╔═══╝ ██╔══██║██╔══██╗╚════██║██╔══╝  ██╔══██╗
+// ██║     ██║  ██║██║  ██║███████║███████╗██║  ██║
+// ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
+                                                
 
 static const char* 
 _tcmd_parse_prepare(const char* str, int* base)
@@ -449,8 +455,8 @@ _tcmd_parse_float(const char* token, float* out)
 
     return TCMD_OK;
 }
-
 #endif
+
 
 #if TCMD_USE_FLOAT && TCMD_USE_64BIT_PRECISION
 static TCMD_Result
@@ -499,6 +505,60 @@ _tcmd_parse_bool(const char* token, bool* out)
         return TCMD_OK;
     }
 }
+
+
+
+// ████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗██╗███████╗███████╗██████╗ 
+// ╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║██║╚══███╔╝██╔════╝██╔══██╗
+//    ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║██║  ███╔╝ █████╗  ██████╔╝
+//    ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║██║ ███╔╝  ██╔══╝  ██╔══██╗
+//    ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║██║███████╗███████╗██║  ██║
+//    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
+
+static TCMD_Result
+_tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
+{
+    
+    if (str == NULL || argv == NULL || argc_out == NULL) return TCMD_ERR_TOKENIZER_EMPTY_STRING;
+
+    int argc = 0;
+
+    char* ptr = str;
+
+    while (ptr != '\0')
+    {
+        if (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r')
+        {
+            ptr++;
+        }
+
+        if (*ptr == '\0') break;
+
+        if (argc > max_args) return TCMD_ERR_TOKENIZER_TOO_MANY_ARGS;
+
+        argv[argc++] = ptr;
+
+        while (*ptr != '\0' && *ptr != ' ' && *ptr != '\t' && *ptr != '\n' && *ptr != '\r')
+        {
+            ptr++;
+        }
+
+        if (*ptr != '\0')
+        {
+            ptr = '\0';
+            ptr++;
+        }
+    }
+
+    *argc_out = argc;
+
+    return TCMD_OK;
+}
+
+
+
+
+
 
 
 
