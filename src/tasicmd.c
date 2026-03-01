@@ -23,11 +23,16 @@ typedef enum
     TCMD_UINT16 = 'H', // uint16_t*	Unsigned 16bit integer
     TCMD_INT32  = 'i', // int32_t*	Signed 32bit integer
     TCMD_UINT32 = 'I', // uint32_t*	Unsigned 32bit integer
+    
 #if TCMD_USE_64BIT_PRECISION
     TCMD_INT64  = 'l', // int64_t*	Signed 64bit integer
     TCMD_UINT64 = 'L', // uint64_t*	Unsigned 64bit integer
 #endif
+
+#if TCMD_USE_FLOAT
     TCMD_FLOAT  = 'f', // float*	Float 
+#endif
+
     TCMD_STRING = 's', // char**	String (return the pointer to the token)
     TCMD_BOOL   = 'z', // bool*	    Boolean (0/1, on/off, true/false can be used)
     TCMD_CUSTOM = 'c', //           Custom parser    
@@ -163,6 +168,7 @@ _tcmd_str_to_num(const char* str, tcmd_num_t* num)
 
 
 
+
 #define TCMD_IS_NEGATIVE(tok) ({            \
     __typeof__(tok) *_p_tok = &(tok);       \
     bool _negative = false;                 \
@@ -174,6 +180,7 @@ _tcmd_str_to_num(const char* str, tcmd_num_t* num)
     }                                       \
     _negative;                              \
 })
+
 
 #define TCMD_HAS_MINUS(tok) ({                      \
     __typeof__(tok) *_p_tok = &(tok);               \
@@ -187,20 +194,124 @@ _tcmd_str_to_num(const char* str, tcmd_num_t* num)
 })
 
 
-#define TCMD_VALIDATE_RANGE(val, max)                           \
-        if ((val) > (max)) return TCMD_ERR_PARSE_OUT_OF_RANGE;  \
+#define TCMD_VALIDATE_RANGE(val, max)                       \
+    if ((val) > (max)) return TCMD_ERR_PARSE_OUT_OF_RANGE;  \
+
+
+#define TCMD_GET_NEGATIVE_VALUE(val, t) \
+    ((t)((u##t)0 - (u##t)(val)))
+
 
 
 
 static inline TCMD_Result
-_tcmd_parse_unsigned_generic(const char** p_token, tcmd_num_t* out, tcmd_num_t max_range)
+_tcmd_parse_unsigned_generic(const char** p_token, tcmd_num_t* out, tcmd_num_t max_pos)
 {
     TCMD_Result res;
 
     if ((res = TCMD_HAS_MINUS(*p_token))        != TCMD_OK) return res;
     if ((res = _tcmd_str_to_num(*p_token, out)) != TCMD_OK) return res;
 
-    TCMD_VALIDATE_RANGE(*out, UINT16_MAX);
+    TCMD_VALIDATE_RANGE(*out, max_pos);
+
+    return TCMD_OK;
+}
+
+
+static TCMD_Result
+_tcmd_parse_uint8(const char* token, uint8_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    tcmd_num_t val = 0;
+
+    TCMD_Result result = _tcmd_parse_unsigned_generic(&token, &val, UINT8_MAX);
+    
+    if (result == TCMD_OK)
+    {
+        *out = (uint8_t) val;
+    }
+
+    return result;
+}
+
+
+static TCMD_Result
+_tcmd_parse_uint16(const char* token, uint16_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    tcmd_num_t val = 0;
+
+    TCMD_Result result = _tcmd_parse_unsigned_generic(&token, &val, UINT16_MAX);
+    
+    if (result == TCMD_OK)
+    {
+        *out = (uint16_t) val;
+    }
+
+    return result;
+}
+
+
+static TCMD_Result
+_tcmd_parse_uint32(const char* token, uint32_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    tcmd_num_t val = 0;
+
+    TCMD_Result result = _tcmd_parse_unsigned_generic(&token, &val, UINT32_MAX);
+    
+    if (result == TCMD_OK)
+    {
+        *out = (uint32_t) val;
+    }
+
+    return result;
+}
+
+
+
+#if TCMD_USE_64BIT_PRECISION
+static TCMD_Result
+_tcmd_parse_uint64(const char* token, uint64_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    tcmd_num_t val = 0;
+
+    TCMD_Result result = _tcmd_parse_unsigned_generic(&token, &val, UINT64_MAX);
+    
+    if (result == TCMD_OK)
+    {
+        *out = (uint64_t) val;
+    }
+
+    return result;
+}
+#endif
+
+
+
+
+static inline TCMD_Result
+_tcmd_parse_signed_generic(const char** p_token, tcmd_num_t* out, bool* is_negative, tcmd_num_t max_pos)
+{
+    TCMD_Result res;
+
+    *is_negative = TCMD_IS_NEGATIVE(*p_token);
+
+    if ((res = _tcmd_str_to_num(*p_token, out)) != TCMD_OK) return res;
+
+    if (*is_negative)
+    {
+        TCMD_VALIDATE_RANGE(*out, max_pos + 1);
+    }
+    else
+    {
+        TCMD_VALIDATE_RANGE(*out, max_pos);
+    }
 
     return TCMD_OK;
 }
@@ -213,58 +324,27 @@ _tcmd_parse_int8(const char* token, int8_t* out)
     if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
 
 
-    bool is_negative = TCMD_IS_NEGATIVE(token);
+    bool        is_negative = false;
+    tcmd_num_t  val         = 0;
+    
+    
+    TCMD_Result res;
 
+    if ((res = _tcmd_parse_signed_generic(&token, &val, &is_negative, INT8_MAX)) != TCMD_OK) return res;
 
-    tcmd_num_t val = 0;
-
-
-    TCMD_Result status = _tcmd_str_to_num(token, &val);
-
-    if (status != TCMD_OK) return status;
 
     if (is_negative)
     {
-        if (val > 128) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-
-        *out = (int8_t) (-((int16_t)val));
+        *out = TCMD_GET_NEGATIVE_VALUE(val, int8_t);
     }
     else
     {
-        if (val > 127) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-
         *out = (int8_t) val;
     }
 
-    return TCMD_OK;
-}
-
-
-static TCMD_Result
-_tcmd_parse_uint8(const char* token, uint8_t* out)
-{
-    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
-
-
-    if (token[0] == '-') return TCMD_ERR_PARSE_NEGATIVE_UNSIGNED;
-    if (token[0] == '+') token++;
-    
-
-    tcmd_num_t val = 0;
-
-
-    TCMD_Result status = _tcmd_str_to_num(token, &val);
-
-    if (status != TCMD_OK) return status;
-
-
-    if (val > UINT8_MAX) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-    
-    *out = (uint8_t) val;
 
     return TCMD_OK;
 }
-
 
 
 static TCMD_Result
@@ -272,87 +352,83 @@ _tcmd_parse_int16(const char* token, int16_t* out)
 {
     if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
 
-    bool is_negative = TCMD_IS_NEGATIVE(token);
 
+    bool        is_negative = false;
+    tcmd_num_t  val         = 0;
+    
+    
+    TCMD_Result res;
 
-    tcmd_num_t val = 0;
+    if ((res = _tcmd_parse_signed_generic(&token, &val, &is_negative, INT16_MAX)) != TCMD_OK) return res;
 
-
-    TCMD_Result status = _tcmd_str_to_num(token, &val);
-
-    if (status != TCMD_OK) return status;
 
     if (is_negative)
     {
-        if (val > 32768) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-
-        *out = (int16_t) (-((int32_t)val));
+        *out = TCMD_GET_NEGATIVE_VALUE(val, int16_t);
     }
     else
     {
-        if (val > 32767) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-
         *out = (int16_t) val;
+    }
+
+
+    return TCMD_OK;
+}
+
+
+static TCMD_Result
+_tcmd_parse_int32(const char* token, int32_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+
+    bool        is_negative = false;
+    tcmd_num_t  val         = 0;
+    
+    
+    TCMD_Result res;
+
+    if ((res = _tcmd_parse_signed_generic(&token, &val, &is_negative, INT32_MAX)) != TCMD_OK) return res;
+
+
+    if (is_negative)
+    {
+        *out = TCMD_GET_NEGATIVE_VALUE(val, int32_t);
+    }
+    else
+    {
+        *out = (int32_t) val;
+    }
+
+
+    return TCMD_OK;
+}
+
+#if TCMD_USE_64BIT_PRECISION
+static TCMD_Result
+_tcmd_parse_int64(const char* token, int64_t* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    bool        is_negative = false;
+    tcmd_num_t  val         = 0;
+    TCMD_Result res;
+
+    if ((res = _tcmd_parse_signed_generic(&token, &val, &is_negative, INT64_MAX)) != TCMD_OK) return res;
+
+    if (is_negative)
+    {
+        *out = TCMD_GET_NEGATIVE_VALUE(val, int64_t);
+    }
+    else
+    {
+        *out = (int64_t)val;
     }
 
     return TCMD_OK;
 }
-
-
-
-
-static TCMD_Result
-_tcmd_parse_uint16(const char* token, uint16_t* out)
-{
-    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
-
-    tcmd_num_t val = 0;
-
-    TCMD_Result result = _tcmd_parse_unsigned_generic(token, &val, UINT16_MAX);
-    
-    if (result == TCMD_OK)
-    {
-        *out = (uint16_t) val;
-    };
-
-    return result;
-}
-
-
-static TCMD_Result
-_tcmd_parse_uint32(const char* token, uint32_t* out)
-{
-    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
-
-
-    if (token[0] == '-') return TCMD_ERR_PARSE_NEGATIVE_UNSIGNED;
-    if (token[0] == '+') token++;
-    
-
-    tcmd_num_t val = 0;
-
-
-    TCMD_Result status = _tcmd_str_to_num(token, &val);
-
-    if (status != TCMD_OK) return status;
-
-
-    if (val > UINT32_MAX) return TCMD_ERR_PARSE_OUT_OF_RANGE;
-    
-    *out = (uint32_t) val;
-
-    return TCMD_OK;
-}
-
-
-#if TCMD_USE_64BIT_PRECISION
-static TCMD_Result
-_tcmd_parse_uint64(const char* token, uint32_t* out);
-
-static TCMD_Result
-_tcmd_parse_uint64(const char* token, uint32_t* out);
-
 #endif
+
 
 
 

@@ -2,13 +2,23 @@
 #define TASICMD_CONFIGURATION_H_
 
 #ifndef TASICMD_MAX_LINE_LENGTH
-#define TASICMD_MAX_LINE_LENGTH (128u)
+    #define TASICMD_MAX_LINE_LENGTH (128u)
 #endif
 
 
 
 #ifndef TCMD_USE_64BIT_PRECISION
-#define TCMD_USE_64BIT_PRECISION (0u)
+    #define TCMD_USE_64BIT_PRECISION (0u)
 #endif
+
+
+
+#ifndef TCMD_USE_FLOAT
+    #define TCMD_USE_FLOAT (0u)
+#endif
+
+
+
+
 
 #endif // TASICMD_CONFIGURATION_H_
