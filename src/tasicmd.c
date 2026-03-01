@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 
 #define TCMD_MIN_TRANSIENT_BUFFER_SIZE 128u
@@ -31,6 +32,10 @@ typedef enum
 
 #if TCMD_USE_FLOAT
     TCMD_FLOAT  = 'f', // float*	Float 
+#endif
+
+#if TCMD_USE_FLOAT && TCMD_USE_64BIT_PRECISION
+    TCMD_DOUBLE = 'd', // float*	Double 
 #endif
 
     TCMD_STRING = 's', // char**	String (return the pointer to the token)
@@ -430,6 +435,72 @@ _tcmd_parse_int64(const char* token, int64_t* out)
 #endif
 
 
+#if TCMD_USE_FLOAT
+static TCMD_Result
+_tcmd_parse_float(const char* token, float* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    char* endptr;
+
+    *out = strtof(token, &endptr);
+
+    if (endptr == token || *endptr == '\0') return TCMD_ERR_PARSE_INVALID_CHAR;
+
+    return TCMD_OK;
+}
+
+#endif
+
+#if TCMD_USE_FLOAT && TCMD_USE_64BIT_PRECISION
+static TCMD_Result
+_tcmd_parse_double(const char* token, double* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    char* endptr;
+
+    *out = strtod(token, &endptr);
+
+    if (endptr == token || *endptr == '\0') return TCMD_ERR_PARSE_INVALID_CHAR;
+
+    return TCMD_OK;
+}
+#endif
+
+
+static TCMD_Result
+_tcmd_parse_bool(const char* token, bool* out)
+{
+    if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
+
+    if (token[0] == '0' && token[1] == '\0') { *out =  true; return TCMD_OK; }
+    if (token[0] == '1' && token[1] == '\0') { *out = false; return TCMD_OK; }
+
+    if (
+        (strcmp(token, "true") == 0) || 
+        (strcmp(token, "TRUE") == 0) || 
+        (strcmp(token,   "on") == 0) || 
+        (strcmp(token,   "ON") == 0)
+    )
+    {
+        *out = true;
+        return TCMD_OK;
+    }
+
+    if (
+        (strcmp(token, "false") == 0) || 
+        (strcmp(token, "FALSE") == 0) || 
+        (strcmp(token,   "off") == 0) ||
+        (strcmp(token,   "OFF") == 0)
+    )
+    {
+        *out = false;
+        return TCMD_OK;
+    }
+}
+
+
 
 
 static TCMD_Module _tcmd;
@@ -549,13 +620,113 @@ tcmd_set_custom_parser(TCMD_CustomParser parser)
 TCMD_Result 
 tcmd_unpack(int argc, char** argv, char* fmt, ...)
 {
+    if (argc <= 0 || argv == NULL || fmt == NULL) return TCMD_ERR_BAD_ARGS;
+
     TCMD_Result result = TCMD_OK;
 
     va_list args;
     va_start(args, fmt);
 
+    for (size_t i = 0; fmt[i] != '\0'; ++i)
+    {
+        // Skipping the command
+        int arg_idx = i + 1;
 
+        if (arg_idx >= argc)
+        {
+            result = TCMD_ERR_FEW_ARGS;
+            break;
+        }
 
+        char* token = argv[arg_idx];
+
+        switch(fmt[i])
+        {
+        case TCMD_INT8:
+        {
+            result = _tcmd_parse_int8(token, va_arg(args, int8_t*));
+        } break;
+
+        case TCMD_UINT8:
+        {
+            result = _tcmd_parse_uint8(token, va_arg(args, uint8_t*));
+        } break;
+
+        case TCMD_INT16:
+        {
+            result = _tcmd_parse_int16(token, va_arg(args, int16_t*));
+        } break;
+
+        case TCMD_UINT16:
+        {
+            result = _tcmd_parse_uint16(token, va_arg(args, uint16_t*)); 
+        } break;
+
+        case TCMD_INT32:
+        {
+            result = _tcmd_parse_int32(token, va_arg(args, int32_t*));
+        } break;
+
+        case TCMD_UINT32:
+        {
+            result = _tcmd_parse_uint32(token, va_arg(args, uint32_t*));
+        } break;
+
+#if TCMD_USE_64BIT_PRECISION
+        case TCMD_INT64:
+        {
+            result = _tcmd_parse_int64(token, va_arg(args, int64_t*));
+        } break;
+
+        case TCMD_UINT64:
+        {
+            result = _tcmd_parse_uint64(token, va_arg(args, uint64_t*));
+        } break;
+#endif
+
+#if TCMD_USE_FLOAT
+        case TCMD_FLOAT:
+        {
+            result = _tcmd_parse_float(token, va_arg(args, float*));
+        } break;
+#endif
+
+#if TCMD_USE_FLOAT && TCMD_USE_64BIT_PRECISION
+        case TCMD_DOUBLE:
+        {
+            result = _tcmd_parse_double(token, va_arg(args, double*));
+        } break;
+#endif
+        case TCMD_STRING:
+        {
+            *(va_arg(args, char**)) = token;
+        } break;
+
+        case TCMD_BOOL:
+        {
+            result = _tcmd_parse_bool(token, va_arg(args, bool*));
+        } break;
+
+        case TCMD_CUSTOM:
+        {
+            if (_tcmd.custom_parser)
+            {
+                result = _tcmd.custom_parser(token, va_arg(args, void*));
+            }
+            else
+            {
+                result = TCMD_ERR_PARSE_CUSTOM_PARSER_IS_ABSENT;
+            }
+        } break;
+
+        default:
+        {
+            result = TCMD_ERR_INVALID_FORMAT;
+        } break;
+        }
+
+        if (result != TCMD_OK) break;
+    }
 
 
     va_end(args);
