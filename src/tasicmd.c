@@ -59,8 +59,11 @@ typedef enum
     TCMD_KEY_CHAR,
     TCMD_KEY_UP,
     TCMD_KEY_DOWN,
+    TCMD_KEY_LEFT,
+    TCMD_KEY_RIGHT,
     TCMD_KEY_BACKSPACE,
-    TCMD_KEY_ENTER
+    TCMD_KEY_ENTER,
+    TCMD_KEY_TAB,
 } TCMD_KeyEvent;
 
 
@@ -107,6 +110,7 @@ typedef struct
 
     char line_buffer[TCMD_LINE_BUFFER_SIZE];
     size_t line_pos;
+    size_t cursor_pos;
 
 
     TCMD_History history;
@@ -660,6 +664,7 @@ _tcmd_render_history_line(const char* line)
 
     strncpy(_tcmd.line_buffer, line, TCMD_LINE_BUFFER_SIZE - 1);
     _tcmd.line_pos = strlen(_tcmd.line_buffer);
+    _tcmd.cursor_pos = _tcmd.line_pos;
 
     _tcmd_write_str(_tcmd.line_buffer);
 }
@@ -687,6 +692,7 @@ _tcmd_history_recall(bool up)
             _tcmd_clear_line_visually();
             _tcmd.line_buffer[0] = '\0';
             _tcmd.line_pos = 0;
+            _tcmd.cursor_pos = 0;
             return;
         }
     }
@@ -750,6 +756,7 @@ _tcmd_process_input(char c, char* out_char)
         if (c == 0x1B) { state = STATE_ESC; return TCMD_KEY_NONE; }
         if (c == 0x08 || c == 0x7F) return TCMD_KEY_BACKSPACE;
         if (c == '\r' || c == '\n') return TCMD_KEY_ENTER;
+        if (c == '\t') return TCMD_KEY_TAB;
 
         *out_char = c;
 
@@ -769,6 +776,8 @@ _tcmd_process_input(char c, char* out_char)
 
         if (c == 'A') return TCMD_KEY_UP;
         if (c == 'B') return TCMD_KEY_DOWN;
+        if (c == 'C') return TCMD_KEY_RIGHT;
+        if (c == 'D') return TCMD_KEY_LEFT;
 
         return TCMD_KEY_NONE;
     } break;
@@ -791,6 +800,8 @@ _tcmd_handle_char(char c)
     {
         _tcmd.line_buffer[_tcmd.line_pos++] = c;
 
+        _tcmd.cursor_pos++;
+
     #if TCMD_ENABLE_COMMAND_ECHO
         _tcmd.io.write(c); /* Echo */
     #endif
@@ -804,6 +815,7 @@ _tcmd_handle_backspace(void)
     if (_tcmd.line_pos > 0)
     {
         _tcmd.line_buffer[--_tcmd.line_pos] = '\0';
+        _tcmd.cursor_pos--;
         _tcmd.io.write(0x08); _tcmd.io.write(' '); _tcmd.io.write(0x08);
     }
 }
@@ -843,6 +855,27 @@ _tcmd_handle_execute(void)
 
 
 
+static void
+_tcmd_handle_left(void)
+{
+    if (_tcmd.cursor_pos > 0)
+    {
+        _tcmd.cursor_pos--;
+        _tcmd_write_str("\b");
+    }
+}
+
+static void
+_tcmd_handle_right(void)
+{
+    if (_tcmd.cursor_pos < _tcmd.line_pos)
+    {
+        _tcmd.cursor_pos++;
+        _tcmd_write_str("\x1b[C");
+    }
+}
+
+
 
 TCMD_Result 
 tcmd_init (const TCMD_ModuleConfig* config)
@@ -873,7 +906,8 @@ tcmd_init (const TCMD_ModuleConfig* config)
     _tcmd.workspace_size     = config->workspace_size;
     _tcmd.persistent_offset  = 0;
 
-    _tcmd.line_pos = 0;
+    _tcmd.line_pos   = 0;
+    _tcmd.cursor_pos = 0;
 
 
     _tcmd.command_head = NULL;
@@ -1113,7 +1147,21 @@ tcmd_run(void)
             _tcmd_history_recall(false);
         } break;
 
-        default: break;
+        case TCMD_KEY_LEFT:
+        {
+            _tcmd_handle_left();
+        } break;
+
+        case TCMD_KEY_RIGHT:
+        {
+            _tcmd_handle_right();
+        } break;
+
+        case TCMD_KEY_TAB:
+        default:
+        {
+            //
+        } break;
 
     }
 }
