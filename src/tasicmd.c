@@ -72,7 +72,7 @@ typedef struct
     size_t workspace_size;
     size_t persistent_offset;
 
-    char line_buffer[TASICMD_MAX_LINE_LENGTH];
+    char line_buffer[TASICMD_LINE_BUFFER_SIZE];
     size_t line_pos;
 
 
@@ -92,6 +92,9 @@ typedef struct
     typedef uint32_t tcmd_num_t;
     #define TCMD_NUM_MAX UINT32_MAX
 #endif
+
+
+static TCMD_Module _tcmd;
 
 
 
@@ -174,7 +177,7 @@ _tcmd_str_to_num(const char* str, tcmd_num_t* num)
 
     *num = result;
 
-    return TCMD_ERR;
+    return TCMD_OK;
 }
 
 
@@ -480,8 +483,8 @@ _tcmd_parse_bool(const char* token, bool* out)
 {
     if (token == NULL || out == NULL) return TCMD_ERR_BAD_ARGS;
 
-    if (token[0] == '0' && token[1] == '\0') { *out =  true; return TCMD_OK; }
-    if (token[0] == '1' && token[1] == '\0') { *out = false; return TCMD_OK; }
+    if (token[0] == '0' && token[1] == '\0') { *out = false; return TCMD_OK; }
+    if (token[0] == '1' && token[1] == '\0') { *out =  true; return TCMD_OK; }
 
     if (
         (strcmp(token, "true") == 0) || 
@@ -504,6 +507,8 @@ _tcmd_parse_bool(const char* token, bool* out)
         *out = false;
         return TCMD_OK;
     }
+
+    return TCMD_ERR_PARSE_INVALID_CHAR;
 }
 
 
@@ -518,14 +523,13 @@ _tcmd_parse_bool(const char* token, bool* out)
 static TCMD_Result
 _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
 {
-    
     if (str == NULL || argv == NULL || argc_out == NULL) return TCMD_ERR_TOKENIZER_EMPTY_STRING;
 
     int argc = 0;
 
     char* ptr = str;
 
-    while (ptr != '\0')
+    while (*ptr != '\0')
     {
         if (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r')
         {
@@ -545,7 +549,7 @@ _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
 
         if (*ptr != '\0')
         {
-            ptr = '\0';
+            *ptr = '\0';
             ptr++;
         }
     }
@@ -557,13 +561,76 @@ _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
 
 
 
+static void
+_tcmd_write_str(const char* s)
+{
+    if (s == NULL) return;
+
+    while (*s != '\0')
+    {
+        _tcmd.io.write(*s++);
+    }
+}
+
+
+static void
+_tcmd_print_intro(void)
+{
+    _tcmd_write_str("\n\r");
+    _tcmd_write_str(_tcmd.intro);
+}
+
+
+static void
+_tcmd_print_prompt(void)
+{
+    _tcmd_write_str("\n\r");
+    _tcmd_write_str(_tcmd.prompt);
+}
+
+
+static void
+_tcmd_execute_line(void)
+{
+    char** argv = (char**)(_tcmd.workspace + _tcmd.persistent_offset);
+    
+    int argc = 0;
+
+
+    TCMD_Result res;
+
+    if ((res = _tcmd_tokenizer(_tcmd.line_buffer, argv, TASICMD_MAX_ARGS, &argc)) != TCMD_OK) return;
+
+    if (argc == 0) return;
+
+    TCMD_CmdEntry* entry = _tcmd.command_head;
+
+    bool found = false;
+
+    while (entry != NULL)
+    {
+        if (strcmp(argv[0], entry->name) == 0)
+        {
+            entry->callback(argc, argv, entry->userdata);
+            found = true;
+            break;
+        }
+
+        entry = entry->next;
+    }
+
+    memset(&_tcmd.line_buffer[0], 0, _tcmd.line_pos);
+    
+    _tcmd.line_pos = 0;
+
+    if (found == false) return;
+}
 
 
 
 
 
 
-static TCMD_Module _tcmd;
 
 
 TCMD_Result 
@@ -600,6 +667,9 @@ tcmd_init (const TCMD_ModuleConfig* config)
 
     _tcmd.command_head = NULL;
 
+
+    _tcmd_print_intro();
+    _tcmd_print_prompt();
 
     return TCMD_OK;
 }
@@ -792,6 +862,42 @@ tcmd_unpack(int argc, char** argv, char* fmt, ...)
     va_end(args);
 
     return result;
+}
+
+
+
+void tcmd_run(void)
+{
+    char c;
+
+    if (_tcmd.io.read(&c) == false) return;
+
+    if (c == '\r' || c == '\n')
+    {
+        _tcmd_execute_line();
+        _tcmd_print_prompt();
+        return;
+    }
+
+    if (c == 0x08 || c == 0x7F)
+    {
+        if (_tcmd.line_pos > 0)
+        {
+            _tcmd.line_pos--;
+            _tcmd.io.write(0x08); _tcmd.io.write(' '); _tcmd.io.write(0x08);
+        }
+
+        return;
+    }
+
+    if (_tcmd.line_pos < TASICMD_LINE_BUFFER_SIZE - 1)
+    {
+        _tcmd.line_buffer[_tcmd.line_pos++] = c;
+        
+#if TCMD_ENABLE_COMMAND_ECHO
+        _tcmd.io.write(c); /* Echo */
+#endif
+    }
 }
 
 

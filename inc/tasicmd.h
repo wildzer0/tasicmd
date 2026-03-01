@@ -114,7 +114,6 @@ TCMD_Result tcmd_set_custom_parser(TCMD_CustomParser parser);
 TCMD_Result tcmd_unpack(int argc, char** argv, char* fmt, ...);
 
 
-#warning MDR: To be implemented
 void tcmd_run(void);
 
 
