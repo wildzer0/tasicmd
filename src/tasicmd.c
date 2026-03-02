@@ -979,6 +979,7 @@ _tcmd_handle_delete(void)
 }
 
 
+
 static void
 _tcmd_write_spaces(int n)
 {
@@ -1028,7 +1029,7 @@ _tcmd__help_handler(int argc, char** argv, void* userargs)
             {
                 _tcmd_write_str("Info ");
                 _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 5);
-                _tcmd_write_str(curr->help ? curr->help : "Command dont' have any info.");
+                _tcmd_write_str(curr->help ? curr->help : "Command don't have any info.");
                 _tcmd_write_str("\r\n");
 
                 _tcmd_write_str("Usage ");
