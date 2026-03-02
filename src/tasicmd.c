@@ -73,6 +73,9 @@ typedef enum
     TCMD_KEY_ENTER,
     TCMD_KEY_TAB,
     TCMD_KEY_DELETE,
+    TCMD_KEY_CLEAR,
+    TCMD_KEY_HOME,
+    TCMD_KEY_END
 } TCMD_KeyEvent;
 
 
@@ -767,6 +770,9 @@ _tcmd_process_input(char c, char* out_char)
         if (c == 0x08 || c == 0x7F) return TCMD_KEY_BACKSPACE;
         if (c == '\r' || c == '\n') return TCMD_KEY_ENTER;
         if (c == '\t') return TCMD_KEY_TAB;
+        if (c == 0x15) return TCMD_KEY_CLEAR;
+        if (c == 0x01) return TCMD_KEY_HOME;
+        if (c == 0x05) return TCMD_KEY_END;
 
         *out_char = c;
 
@@ -976,6 +982,41 @@ _tcmd_handle_delete(void)
     }
 
     RESTORE_CURSOR_POS;
+}
+
+
+
+static void
+_tcmd_handle_clear(void)
+{
+    _tcmd_write_str("\r");
+    _tcmd_write_str(_tcmd.prompt);
+    CLEAR_LINE;
+
+    _tcmd.line_pos = 0;
+    _tcmd.cursor_pos = 0;
+    _tcmd.line_buffer[0] = '\0';
+}
+
+
+
+static void
+_tcmd_handle_home(void)
+{
+    _tcmd.cursor_pos = 0;
+    _tcmd_write_str("\r");
+    _tcmd_write_str(_tcmd.prompt);
+}
+
+
+static void
+_tcmd_handle_end(void)
+{
+    if (_tcmd.cursor_pos < _tcmd.line_pos)
+    {
+        _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos]);
+        _tcmd.cursor_pos = _tcmd.line_pos;
+    }
 }
 
 
@@ -1337,6 +1378,21 @@ tcmd_run(void)
         case TCMD_KEY_DELETE:
         {
             _tcmd_handle_delete();
+        } break;
+
+        case TCMD_KEY_CLEAR:
+        {
+            _tcmd_handle_clear();
+        } break;
+
+        case TCMD_KEY_HOME:
+        {
+            _tcmd_handle_home();
+        } break;
+
+        case TCMD_KEY_END:
+        {
+            _tcmd_handle_end();
         } break;
 
         case TCMD_KEY_TAB:
