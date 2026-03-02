@@ -7,7 +7,7 @@
 
 
 #define TCMD_MIN_TRANSIENT_BUFFER_SIZE 128u
-
+#define TCMD_NAME_COLUMN_WIDTH 10
 
 
 
@@ -169,12 +169,12 @@ _tcmd_print_prompt(void)
 static void
 _tcmd_clear_line_visually(void)
 {
-    while (_tcmd.line_pos > 0)
-    {
-        _tcmd_write_str("\b \b");
-        _tcmd.line_pos--;
-    }
+    _tcmd_write_str("\r");
+    _tcmd_write_str(_tcmd.prompt);
+    _tcmd_write_str("\x1b[K");
 
+    _tcmd.line_pos = 0;
+    _tcmd.cursor_pos = 0;
     _tcmd.line_buffer[0] = '\0';
 }
 
@@ -865,6 +865,7 @@ _tcmd_handle_left(void)
     }
 }
 
+
 static void
 _tcmd_handle_right(void)
 {
@@ -872,6 +873,71 @@ _tcmd_handle_right(void)
     {
         _tcmd.cursor_pos++;
         _tcmd_write_str("\x1b[C");
+    }
+}
+
+
+static void
+_tcmd_write_spaces(int n)
+{
+    while(n-- > 0) _tcmd.io.write(' ');
+}
+
+
+static void
+_tcmd__help_handler(int argc, char** argv, void* userargs)
+{
+    (void) userargs;
+
+    if (argc == 1)
+    {
+        _tcmd_write_str("Commands:\n\r");
+        
+        TCMD_CmdEntry* curr = _tcmd.command_head;
+
+        while(curr)
+        {
+            int name_len = strlen(curr->name);
+            int padding = TCMD_NAME_COLUMN_WIDTH - name_len;
+
+            if (padding < 1) padding = 1;
+
+            _tcmd_write_str("  ");
+            _tcmd_write_str(curr->name);
+            if (curr->usage)
+            {
+                _tcmd_write_spaces(padding);
+                _tcmd_write_str(curr->usage);
+            }
+            _tcmd_write_str("\r\n");
+            
+            curr = curr->next;
+        }
+    }
+    else
+    {
+        TCMD_CmdEntry* curr = _tcmd.command_head;
+
+        while(curr)
+        {
+            if (strcmp(argv[1], "help") == 0) return;
+
+            if (strcmp(argv[1], curr->name) == 0)
+            {
+                _tcmd_write_str("Info ");
+                _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 5);
+                _tcmd_write_str(curr->help ? curr->help : "Command dont' have any info.");
+                _tcmd_write_str("\r\n");
+
+                _tcmd_write_str("Usage ");
+                _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 6);
+                _tcmd_write_str(curr->usage ? curr->usage : "Command don't have any usage info.");
+                _tcmd_write_str("\r\n");
+                return;
+            }
+
+            curr = curr->next;
+        }
     }
 }
 
@@ -911,6 +977,14 @@ tcmd_init (const TCMD_ModuleConfig* config)
 
 
     _tcmd.command_head = NULL;
+
+    tcmd_register_command(
+        "help", 
+        "this help",
+        "help [<command>]",
+        _tcmd__help_handler,
+        NULL
+    );
 
 
     _tcmd_print_intro();
@@ -1168,11 +1242,35 @@ tcmd_run(void)
 
 
 
+void 
+tcmd_print_usage(const char* name)
+{
+    if (name == NULL) return;
+
+    TCMD_CmdEntry* curr = _tcmd.command_head;
+
+    while(curr)
+    {
+        if (strcmp(curr->name, name) == 0)
+        {
+            _tcmd_write_str("Usage ");
+            _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 6);
+            _tcmd_write_str(curr->usage ? curr->usage : "Command has usage info.");
+            _tcmd_write_str("\r\n");
+
+            return;
+        }
+
+        curr = curr->next;
+    }
+}
+
+
 
 __attribute__((weak)) void 
 tcmd_default(void)
 {
-    _tcmd_write_str("Command not found!");
+    return;
 }
 
 

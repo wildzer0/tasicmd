@@ -117,6 +117,8 @@ TCMD_Result tcmd_unpack(int argc, char** argv, char* fmt, ...);
 void tcmd_run(void);
 
 
+void tcmd_print_usage(const char* name);
+
 
 // Hooks
 void tcmd_default(void);
