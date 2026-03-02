@@ -32,12 +32,6 @@
 
 
 
-#ifndef TCMD_ENABLE_COMMAND_ECHO
-    #define TCMD_ENABLE_COMMAND_ECHO (1u)
-#endif
-
-
-
 
 
 #endif // TASICMD_CONFIGURATION_H_

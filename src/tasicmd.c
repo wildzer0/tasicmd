@@ -796,15 +796,36 @@ _tcmd_process_input(char c, char* out_char)
 static void
 _tcmd_handle_char(char c)
 {
-    if (_tcmd.line_pos < TCMD_LINE_BUFFER_SIZE - 1)
-    {
-        _tcmd.line_buffer[_tcmd.line_pos++] = c;
+    if (_tcmd.line_pos >= TCMD_LINE_BUFFER_SIZE - 1) return;
 
+    if (_tcmd.cursor_pos < _tcmd.line_pos)
+    {
+        size_t tail = _tcmd.line_pos - _tcmd.cursor_pos;
+
+        memmove(
+            &_tcmd.line_buffer[_tcmd.cursor_pos + 1],
+            &_tcmd.line_buffer[_tcmd.cursor_pos],
+            tail
+        );
+
+
+        _tcmd.line_buffer[_tcmd.cursor_pos] = c;
+
+        _tcmd.line_pos++;
         _tcmd.cursor_pos++;
 
-    #if TCMD_ENABLE_COMMAND_ECHO
-        _tcmd.io.write(c); /* Echo */
-    #endif
+        _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos - 1]);
+
+        for (int i = 0; i < tail; ++i) _tcmd_write_str("\b");
+    }
+    else
+    {
+        _tcmd.line_buffer[_tcmd.line_pos] = c;
+
+        _tcmd.line_pos++;
+        _tcmd.cursor_pos++;
+
+        _tcmd.io.write(c);
     }
 }
 
