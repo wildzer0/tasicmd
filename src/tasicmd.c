@@ -11,6 +11,14 @@
 
 
 
+#define SAVE_CURSOR_POS     _tcmd_write_str("\x1b[s")
+#define CLEAR_LINE          _tcmd_write_str("\x1b[K")
+#define RESTORE_CURSOR_POS  _tcmd_write_str("\x1b[u")
+#define MOVE_CURSOR_RIGHT   _tcmd_write_str("\x1b[C")
+#define MOVE_CURSOR_LEFT    _tcmd_write_str("\b")
+
+
+
 static const char* TCMD_DEFAULT_PROMPT = "(TCMD)> ";
 
 static const char* TCMD_DEFAULT_INTRO  =
@@ -64,6 +72,7 @@ typedef enum
     TCMD_KEY_BACKSPACE,
     TCMD_KEY_ENTER,
     TCMD_KEY_TAB,
+    TCMD_KEY_DELETE,
 } TCMD_KeyEvent;
 
 
@@ -171,7 +180,8 @@ _tcmd_clear_line_visually(void)
 {
     _tcmd_write_str("\r");
     _tcmd_write_str(_tcmd.prompt);
-    _tcmd_write_str("\x1b[K");
+    
+    CLEAR_LINE;
 
     _tcmd.line_pos = 0;
     _tcmd.cursor_pos = 0;
@@ -747,7 +757,7 @@ _tcmd_execute_line(void)
 TCMD_KeyEvent
 _tcmd_process_input(char c, char* out_char)
 {
-    static enum { STATE_IDLE, STATE_ESC, STATE_BRACKET } state = STATE_IDLE;
+    static enum { STATE_IDLE, STATE_ESC, STATE_BRACKET, STATE_DELETE } state = STATE_IDLE;
 
     switch(state)
     {
@@ -774,10 +784,22 @@ _tcmd_process_input(char c, char* out_char)
     {
         state = STATE_IDLE;
 
-        if (c == 'A') return TCMD_KEY_UP;
-        if (c == 'B') return TCMD_KEY_DOWN;
-        if (c == 'C') return TCMD_KEY_RIGHT;
-        if (c == 'D') return TCMD_KEY_LEFT;
+        if (c == 'A') { state = STATE_IDLE;     return TCMD_KEY_UP;     }
+        if (c == 'B') { state = STATE_IDLE;     return TCMD_KEY_DOWN;   }
+        if (c == 'C') { state = STATE_IDLE;     return TCMD_KEY_RIGHT;  }
+        if (c == 'D') { state = STATE_IDLE;     return TCMD_KEY_LEFT;   }
+        if (c == '3') { state = STATE_DELETE;   return TCMD_KEY_NONE;   }
+
+        state = STATE_IDLE;
+
+        return TCMD_KEY_NONE;
+    } break;
+
+    case STATE_DELETE:
+    {
+        state = STATE_IDLE;
+        
+        if (c == '~') return TCMD_KEY_DELETE;
 
         return TCMD_KEY_NONE;
     } break;
@@ -800,7 +822,7 @@ _tcmd_handle_char(char c)
 
     if (_tcmd.cursor_pos < _tcmd.line_pos)
     {
-        size_t tail = _tcmd.line_pos - _tcmd.cursor_pos;
+        int tail = _tcmd.line_pos - _tcmd.cursor_pos;
 
         memmove(
             &_tcmd.line_buffer[_tcmd.cursor_pos + 1],
@@ -816,7 +838,7 @@ _tcmd_handle_char(char c)
 
         _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos - 1]);
 
-        for (int i = 0; i < tail; ++i) _tcmd_write_str("\b");
+        for (int i = 0; i < tail; ++i) MOVE_CURSOR_LEFT;
     }
     else
     {
@@ -833,11 +855,38 @@ _tcmd_handle_char(char c)
 static void
 _tcmd_handle_backspace(void)
 {
-    if (_tcmd.line_pos > 0)
+    if (_tcmd.cursor_pos == 0) return;
+
+    if (_tcmd.cursor_pos < _tcmd.line_pos)
     {
-        _tcmd.line_buffer[--_tcmd.line_pos] = '\0';
+        int tail = _tcmd.line_pos - _tcmd.cursor_pos;
+
+        memmove(
+            &_tcmd.line_buffer[_tcmd.cursor_pos - 1],
+            &_tcmd.line_buffer[_tcmd.cursor_pos],
+            tail
+        );
+
+
+        _tcmd.line_pos--;
         _tcmd.cursor_pos--;
-        _tcmd.io.write(0x08); _tcmd.io.write(' '); _tcmd.io.write(0x08);
+
+        _tcmd.line_buffer[_tcmd.line_pos] = '\0';
+
+        MOVE_CURSOR_LEFT;
+        SAVE_CURSOR_POS;
+        CLEAR_LINE;
+
+        _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos]);
+
+        RESTORE_CURSOR_POS;
+    }
+    else
+    {
+        _tcmd.line_pos--;
+        _tcmd.cursor_pos--;
+        _tcmd.line_buffer[_tcmd.line_pos] = '\0';
+        _tcmd_write_str("\b \b");
     }
 }
 
@@ -882,7 +931,7 @@ _tcmd_handle_left(void)
     if (_tcmd.cursor_pos > 0)
     {
         _tcmd.cursor_pos--;
-        _tcmd_write_str("\b");
+        MOVE_CURSOR_LEFT;
     }
 }
 
@@ -893,8 +942,40 @@ _tcmd_handle_right(void)
     if (_tcmd.cursor_pos < _tcmd.line_pos)
     {
         _tcmd.cursor_pos++;
-        _tcmd_write_str("\x1b[C");
+        MOVE_CURSOR_RIGHT;
     }
+}
+
+
+
+static void
+_tcmd_handle_delete(void)
+{
+    if (_tcmd.cursor_pos >= _tcmd.line_pos) return;
+
+    int tail = _tcmd.line_pos - _tcmd.cursor_pos - 1;
+
+    if (tail > 0)
+    {
+        memmove(
+            &_tcmd.line_buffer[_tcmd.cursor_pos],
+            &_tcmd.line_buffer[_tcmd.cursor_pos + 1],
+            tail
+        );
+    }
+
+    _tcmd.line_pos--;
+    _tcmd.line_buffer[_tcmd.line_pos] = '\0';
+
+    SAVE_CURSOR_POS;
+    CLEAR_LINE;
+
+    if (tail > 0)
+    {
+        _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos]);
+    }
+
+    RESTORE_CURSOR_POS;
 }
 
 
@@ -1250,6 +1331,11 @@ tcmd_run(void)
         case TCMD_KEY_RIGHT:
         {
             _tcmd_handle_right();
+        } break;
+
+        case TCMD_KEY_DELETE:
+        {
+            _tcmd_handle_delete();
         } break;
 
         case TCMD_KEY_TAB:
