@@ -7,7 +7,7 @@
 
 
 #define TCMD_MIN_TRANSIENT_BUFFER_SIZE 128u
-#define TCMD_NAME_COLUMN_WIDTH 10
+#define TCMD_NAME_COLUMN_WIDTH 16
 
 
 
@@ -132,6 +132,8 @@ typedef struct
 
 
     TCMD_CmdEntry *command_head;
+
+    size_t command_num;
 } TCMD_Module;
 
 
@@ -782,9 +784,15 @@ _tcmd_process_input(char c, char* out_char)
         if (c == 0x01) return TCMD_KEY_HOME;
         if (c == 0x05) return TCMD_KEY_END;
 
-        *out_char = c;
+        // Allowing only characters from space to ~
+        if (c >= 0x20 && c <= 0x7E)
+        {
+            *out_char = c;
+            
+            return TCMD_KEY_CHAR;
+        }
 
-        return TCMD_KEY_CHAR;
+        return TCMD_KEY_NONE;
     } break;
 
     case STATE_ESC:
@@ -933,6 +941,9 @@ _tcmd_handle_execute(void)
         _tcmd_print_prompt();
     }
 
+    #warning Maybe a better method exist?
+    memset(&_tcmd.line_buffer, 0, sizeof(_tcmd.line_buffer));
+
     _tcmd.line_pos = 0;
     _tcmd.cursor_pos = 0;
 
@@ -1014,9 +1025,12 @@ _tcmd_handle_clear(void)
 static void
 _tcmd_handle_home(void)
 {
-    _tcmd.cursor_pos = 0;
-    _tcmd_write_str("\r");
-    _tcmd_write_str(_tcmd.prompt);
+    if (_tcmd.cursor_pos > 0)
+    {
+        _tcmd.cursor_pos = 0;
+        _tcmd_write_str("\r");
+        _tcmd_write_str(_tcmd.prompt);
+    }
 }
 
 
@@ -1027,6 +1041,80 @@ _tcmd_handle_end(void)
     {
         _tcmd_write_str(&_tcmd.line_buffer[_tcmd.cursor_pos]);
         _tcmd.cursor_pos = _tcmd.line_pos;
+    }
+}
+
+
+#warning TO BE OPTIMIZED
+static void
+_tcmd_handle_tab(void)
+{
+    for (size_t i = 0; i < _tcmd.cursor_pos; ++i)
+    {
+        if (_tcmd.line_buffer[i] == ' ') return;
+    }
+
+    int match_count = 0;
+    const char* last_match = NULL;
+    int input_len = _tcmd.cursor_pos;
+
+    TCMD_CmdEntry* curr = _tcmd.command_head;
+
+    while(curr)
+    {
+        if (strncmp(_tcmd.line_buffer, curr->name, input_len) == 0)
+        {
+            match_count++;
+            last_match = curr->name;
+        }
+
+
+        curr = curr->next;
+    }
+
+    if (match_count == 0)
+    {
+        return;
+    }
+    else if (match_count == 1)
+    {
+        int match_len = strlen(last_match);
+
+        for (int i = input_len; i < match_len; ++i)
+        {
+            _tcmd.line_buffer[i] = last_match[i];
+            _tcmd_write_str((char[]){ last_match[i], '\0' });
+        }
+
+        _tcmd.line_buffer[match_len] = ' ';
+        _tcmd.line_buffer[match_len + 1] = '\0';
+        _tcmd_write_str(" ");
+
+        _tcmd.line_pos = match_len + 1;
+        _tcmd.cursor_pos = _tcmd.line_pos;
+    }
+    else
+    {
+        _tcmd_write_str("\r\n");
+
+        curr = _tcmd.command_head;
+
+
+        while (curr)
+        {
+            if (strncmp(_tcmd.line_buffer, curr->name, input_len) == 0)
+            {
+                _tcmd_write_str(curr->name);
+                _tcmd_write_str(" ");
+            }
+
+            curr = curr->next;
+        }
+
+
+        _tcmd_write_str("\r\n");
+        _tcmd_write_str(_tcmd.prompt);
+        _tcmd_write_str(_tcmd.line_buffer);
     }
 }
 
@@ -1071,12 +1159,13 @@ _tcmd__help_handler(int argc, char** argv, void* userargs)
     }
     else
     {
+        if (strcmp(argv[1], "help") == 0) return;
+
+
         TCMD_CmdEntry* curr = _tcmd.command_head;
 
         while(curr)
         {
-            if (strcmp(argv[1], "help") == 0) return;
-
             if (strcmp(argv[1], curr->name) == 0)
             {
                 _tcmd_write_str("Info ");
@@ -1132,6 +1221,7 @@ tcmd_init (const TCMD_ModuleConfig* config)
 
 
     _tcmd.command_head = NULL;
+    _tcmd.command_num  = 0;
 
     tcmd_register_command(
         "help", 
@@ -1191,7 +1281,9 @@ tcmd_register_command (
 
 
     new_cmd->next       = _tcmd.command_head;
+    
     _tcmd.command_head  = new_cmd;
+    _tcmd.command_num++;
 
 
     _tcmd.persistent_offset += aligned_offset + entry_size;
@@ -1407,6 +1499,10 @@ tcmd_run(void)
         } break;
 
         case TCMD_KEY_TAB:
+        {
+            _tcmd_handle_tab();
+        } break;
+
         default:
         {
             //
