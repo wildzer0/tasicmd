@@ -598,24 +598,32 @@ _tcmd_parse_bool(const char* token, bool* out)
 }
 
 
+static void
+_tcmd_ltrim(char* str)
+{
+    char* ptr = str;
 
+    while (*ptr == ' ' || *ptr == '\t') ptr++;
+
+    if (ptr != str)
+    {
+        memmove(str, ptr, strlen(ptr) + 1);
+    }
+}
 
 static TCMD_Result
 _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
 {
     if (str == NULL || argv == NULL || argc_out == NULL) return TCMD_ERR_TOKENIZER_EMPTY_STRING;
 
-    int argc = 0;
+    int     argc = 0;
+    char*   ptr  = str;
 
-    char* ptr = str;
+    _tcmd_ltrim(ptr);
 
     while (*ptr != '\0')
     {
-        if (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r')
-        {
-            ptr++;
-        }
-
+        if (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r') ptr++;
         if (*ptr == '\0') break;
 
         if (argc > max_args) return TCMD_ERR_TOKENIZER_TOO_MANY_ARGS;
@@ -902,6 +910,9 @@ _tcmd_handle_execute(void)
 {
     if (_tcmd.line_pos > 0)
     {
+        // To avoid the buffer memset every time
+        _tcmd.line_buffer[_tcmd.line_pos] = '\0';
+
         // Save linebuffer into the history
         _tcmd_history_save(_tcmd.line_buffer, _tcmd.line_pos);
 
@@ -922,9 +933,9 @@ _tcmd_handle_execute(void)
         _tcmd_print_prompt();
     }
 
-    memset(&_tcmd.line_buffer[0], 0, _tcmd.line_pos);
-    
     _tcmd.line_pos = 0;
+    _tcmd.cursor_pos = 0;
+
 
     _tcmd_history_reset_browse();
 }

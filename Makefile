@@ -29,7 +29,6 @@ lib: $(LIB)
 
 $(LIB): $(OBJ)
 	$(AR) $(ARFLAGS) $@ $^
-	@echo "Libreria statica creata: $@"
 
 example: lib
 	$(CC) $(CFLAGS) $(TEST_SRC) -L$(BINDIR) -ltasicmd -o $(TEST_BIN)
