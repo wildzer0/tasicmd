@@ -601,18 +601,40 @@ _tcmd_parse_bool(const char* token, bool* out)
 }
 
 
+
+
 static void
-_tcmd_ltrim(char* str)
+_tcmd_normalize_string(char* str)
 {
-    char* ptr = str;
+    int src = 0;
+    int dst = 0;
+    int len = strlen(str);
 
-    while (*ptr == ' ' || *ptr == '\t') ptr++;
+    while (src < len && str[src] == ' ') src++;
 
-    if (ptr != str)
+    while (src < len)
     {
-        memmove(str, ptr, strlen(ptr) + 1);
+        if (str[src] != ' ') 
+        {
+            str[dst++] = str[src++];
+        }
+        else
+        {
+            if (dst > 0 && str[src + 1] != ' ' && str[src + 1] != '\0')
+            {
+                str[dst++] = ' ';
+            }
+
+            src++;
+        }
     }
+
+    str[dst] = '\0';
 }
+
+
+
+
 
 static TCMD_Result
 _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
@@ -622,21 +644,29 @@ _tcmd_tokenizer(char* str, char** argv, int max_args, int* argc_out)
     int     argc = 0;
     char*   ptr  = str;
 
-    _tcmd_ltrim(ptr);
-
     while (*ptr != '\0')
     {
-        if (*ptr == ' ' || *ptr == '\t' || *ptr == '\n' || *ptr == '\r') ptr++;
         if (*ptr == '\0') break;
 
         if (argc > max_args) return TCMD_ERR_TOKENIZER_TOO_MANY_ARGS;
 
-        argv[argc++] = ptr;
-
-        while (*ptr != '\0' && *ptr != ' ' && *ptr != '\t' && *ptr != '\n' && *ptr != '\r')
+        if (*ptr == '"')
         {
             ptr++;
+            argv[argc++] = ptr;
+
+            while (*ptr != '"') 
+            {
+                if (*ptr != '\0')   ptr++;
+                else return TCMD_ERR_TOKENIZER_STRING_NOT_CLOSED;
+            }
         }
+        else
+        {
+            argv[argc++] = ptr;
+            while (*ptr != '\0' && *ptr != ' ' && *ptr != '\t' && *ptr != '\n' && *ptr != '\r') ptr++;
+        }
+
 
         if (*ptr != '\0')
         {
@@ -832,6 +862,7 @@ _tcmd_execute_line(void)
     
     int argc = 0;
 
+    _tcmd_normalize_string(_tcmd.line_buffer);
 
     TCMD_Result res;
 
@@ -861,6 +892,7 @@ _tcmd_execute_line(void)
         _tcmd_find_best_match(argv[0]);
     }
 }
+
 
 
 TCMD_KeyEvent
@@ -1673,15 +1705,6 @@ tcmd_print_usage(const char* name)
         curr = curr->next;
     }
 }
-
-
-
-__attribute__((weak)) void 
-tcmd_default(void)
-{
-    return;
-}
-
 
 
 
