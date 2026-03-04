@@ -6,16 +6,13 @@ ARFLAGS = rcs
 
 SRCDIR = src
 INCDIR = inc
-TESTDIR = tests
 BINDIR = bin
 
 SRC = $(SRCDIR)/tasicmd.c
 OBJ = $(BINDIR)/tasicmd.o
 LIB = $(BINDIR)/$(LIB_NAME)
-TEST_SRC = $(TESTDIR)/test_suite.c
-TEST_BIN = $(BINDIR)/test_runner
 
-.PHONY: all clean example test lib
+.PHONY: all clean lib
 
 all: lib
 
@@ -29,12 +26,6 @@ lib: $(LIB)
 
 $(LIB): $(OBJ)
 	$(AR) $(ARFLAGS) $@ $^
-
-example: lib
-	$(CC) $(CFLAGS) $(TEST_SRC) -L$(BINDIR) -ltasicmd -o $(TEST_BIN)
-
-test: example
-	./$(TEST_BIN)
 
 clean:
 	rm -rf $(BINDIR)
