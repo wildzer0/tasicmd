@@ -728,6 +728,103 @@ _tcmd_history_recall(bool up)
 }
 
 
+
+
+
+#define MIN(a, b)       ((a) < (b) ? (a) : (b))
+#define MIN3(a, b, c)   MIN(MIN((a), (b)), (c))
+
+static int
+_tcmd_osa_fast(const char* s1, const char* s2, int threshold)
+{
+    int n = strlen(s1);
+    int m = strlen(s2);
+
+    int len_diff = n > m ? n - m : m - n;
+    if (len_diff > threshold) return threshold + 1;
+
+    int row0[TCMD_LINE_BUFFER_SIZE + 1];
+    int row1[TCMD_LINE_BUFFER_SIZE + 1];
+    int row2[TCMD_LINE_BUFFER_SIZE + 1];
+
+    int *prev2 = row0;
+    int *prev1 = row1;
+    int *curr  = row2;
+
+    for (int j = 0; j <= m; j++) prev1[j] = j;
+
+    for (int i = 1; i <= n; i++)
+    {
+        curr[0] = i;
+        int current_row_min = i;
+
+        for (int j = 1; j <= m; j++)
+        {
+            int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
+            
+            curr[j] = MIN3(prev1[j] + 1, curr[j - 1] + 1, prev1[j - 1] + cost);
+
+            if (i > 1 && j > 1 && s1[i - 1] == s2[j - 2] && s1[i - 2] == s2[j - 1])
+            {
+                curr[j] = MIN(curr[j], prev2[j - 2] + 1);
+            }
+
+            if (curr[j] < current_row_min) current_row_min = curr[j];
+        }
+
+        if (current_row_min > threshold) return threshold + 1;
+
+        int *tmp = prev2;
+        prev2 = prev1;
+        prev1 = curr;
+        curr = tmp;
+    }
+
+    return prev1[m];
+}
+
+
+
+static void
+_tcmd_find_best_match(const char* wrong_cmd)
+{
+    TCMD_CmdEntry* curr = _tcmd.command_head;
+        
+    int         min_distance    = 3;
+    const char* best_match      = NULL;
+
+    while (curr)
+    {
+        int distance = _tcmd_osa_fast(wrong_cmd, curr->name, min_distance);
+
+        if (distance < min_distance)
+        {
+            min_distance = distance;
+            best_match = curr->name;
+
+            if (min_distance == 1) break;   
+        }
+
+        curr = curr->next;
+    }
+
+    if (best_match == NULL)
+    {
+        _tcmd_write_str("The command ");
+        _tcmd_write_str(wrong_cmd);
+        _tcmd_write_str(" is unknown.\n\r");
+    }
+    else
+    {
+        _tcmd_write_str("Did you mean this? [");
+        _tcmd_write_str(best_match);
+        _tcmd_write_str("]\r\n");
+    }
+}
+
+
+
+
 static void
 _tcmd_execute_line(void)
 {
@@ -761,9 +858,7 @@ _tcmd_execute_line(void)
 
     if (found == false)
     {
-        tcmd_default();
-
-        return;
+        _tcmd_find_best_match(argv[0]);
     }
 }
 
@@ -942,7 +1037,6 @@ _tcmd_handle_execute(void)
         _tcmd_print_prompt();
     }
 
-    #warning Maybe a better method exist?
     memset(&_tcmd.line_buffer, 0, sizeof(_tcmd.line_buffer));
 
     _tcmd.line_pos = 0;
@@ -1145,6 +1239,7 @@ _tcmd_handle_tab(void)
             _tcmd_write_str(" ");
         }
 
+        CRLF;
         CRLF;
 
         _tcmd_write_str(_tcmd.prompt);
@@ -1569,7 +1664,7 @@ tcmd_print_usage(const char* name)
             _tcmd_write_str("Usage ");
             _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 6);
             _tcmd_write_str(curr->usage ? curr->usage : "Command has usage info.");
-            
+
             CRLF;
 
             return;

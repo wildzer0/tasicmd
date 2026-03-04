@@ -121,7 +121,6 @@ void tcmd_print_usage(const char* name);
 
 
 // Hooks
-void tcmd_default(void);
 void tcmd_pre_execute(void);
 void tcmd_post_execute(void);
 
