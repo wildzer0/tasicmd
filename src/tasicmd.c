@@ -16,6 +16,7 @@
 #define RESTORE_CURSOR_POS  _tcmd_write_str("\x1b[u")
 #define MOVE_CURSOR_RIGHT   _tcmd_write_str("\x1b[C")
 #define MOVE_CURSOR_LEFT    _tcmd_write_str("\b")
+#define CRLF                _tcmd_write_str("\r\n")
 
 
 
@@ -1045,27 +1046,75 @@ _tcmd_handle_end(void)
 }
 
 
-#warning TO BE OPTIMIZED
+
+static size_t
+_tcmd_count_common_prefix(const char* s1, const char* s2)
+{
+    size_t count = 0;
+
+    while (s1[count] && s2[count] && (s1[count] == s2[count]))
+    {
+        count++;
+    }
+
+    return count;
+}
+
+
+
+static void
+_tcmd_autocomplete(const char* reference, size_t from, size_t to, size_t size, bool add_space)
+{
+    strncpy(&_tcmd.line_buffer[from], &reference[from], to);
+
+    if (add_space)
+    {
+        _tcmd.line_buffer[size++] = ' ';
+    }
+
+    _tcmd.line_buffer[size] = '\0';
+
+    _tcmd.line_pos += add_space ? to + 1 : to;
+    _tcmd.cursor_pos = _tcmd.line_pos;
+}
+
+
+
 static void
 _tcmd_handle_tab(void)
 {
-    for (size_t i = 0; i < _tcmd.cursor_pos; ++i)
-    {
-        if (_tcmd.line_buffer[i] == ' ') return;
-    }
+    if (strchr(_tcmd.line_buffer, ' ') != NULL || _tcmd.line_buffer[_tcmd.cursor_pos + 1] != '\0') return;
 
-    int match_count = 0;
-    const char* last_match = NULL;
-    int input_len = _tcmd.cursor_pos;
+
+    const char* matches[_tcmd.command_num];
+
+    size_t match_count  = 0;
+    size_t input_len    = _tcmd.cursor_pos;
+    size_t lcp          = 0;
+    bool   first_match  = false;
 
     TCMD_CmdEntry* curr = _tcmd.command_head;
 
-    while(curr)
+    while (curr)
     {
         if (strncmp(_tcmd.line_buffer, curr->name, input_len) == 0)
         {
+            matches[match_count] = curr->name;
+
+            if (first_match == false)
+            {
+                first_match = true;
+
+                lcp = strlen(curr->name);
+            }
+            else
+            {
+                size_t common = _tcmd_count_common_prefix(matches[match_count - 1], curr->name);
+                
+                if (common < lcp) lcp = common;
+            }
+
             match_count++;
-            last_match = curr->name;
         }
 
 
@@ -1078,45 +1127,38 @@ _tcmd_handle_tab(void)
     }
     else if (match_count == 1)
     {
-        int match_len = strlen(last_match);
+        const char* the_reference = matches[0];
 
-        for (int i = input_len; i < match_len; ++i)
-        {
-            _tcmd.line_buffer[i] = last_match[i];
-            _tcmd_write_str((char[]){ last_match[i], '\0' });
-        }
+        size_t rest = lcp - input_len;
 
-        _tcmd.line_buffer[match_len] = ' ';
-        _tcmd.line_buffer[match_len + 1] = '\0';
-        _tcmd_write_str(" ");
+        _tcmd_autocomplete(the_reference, input_len, rest, lcp, true);
 
-        _tcmd.line_pos = match_len + 1;
-        _tcmd.cursor_pos = _tcmd.line_pos;
+        _tcmd_write_str(&_tcmd.line_buffer[input_len]);
     }
     else
     {
-        _tcmd_write_str("\r\n");
+        CRLF;
 
-        curr = _tcmd.command_head;
-
-
-        while (curr)
+        for (size_t i = 0; i < match_count; ++i)
         {
-            if (strncmp(_tcmd.line_buffer, curr->name, input_len) == 0)
-            {
-                _tcmd_write_str(curr->name);
-                _tcmd_write_str(" ");
-            }
-
-            curr = curr->next;
+            _tcmd_write_str(matches[i]);
+            _tcmd_write_str(" ");
         }
 
+        CRLF;
 
-        _tcmd_write_str("\r\n");
         _tcmd_write_str(_tcmd.prompt);
+
+        const char* the_reference = matches[0];
+
+        size_t rest = lcp - input_len;
+
+        _tcmd_autocomplete(the_reference, input_len, rest, lcp, false);
+
         _tcmd_write_str(_tcmd.line_buffer);
     }
 }
+
 
 
 
@@ -1152,7 +1194,7 @@ _tcmd__help_handler(int argc, char** argv, void* userargs)
                 _tcmd_write_spaces(padding);
                 _tcmd_write_str(curr->usage);
             }
-            _tcmd_write_str("\r\n");
+            CRLF;
             
             curr = curr->next;
         }
@@ -1171,12 +1213,12 @@ _tcmd__help_handler(int argc, char** argv, void* userargs)
                 _tcmd_write_str("Info ");
                 _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 5);
                 _tcmd_write_str(curr->help ? curr->help : "Command don't have any info.");
-                _tcmd_write_str("\r\n");
+                CRLF;
 
                 _tcmd_write_str("Usage ");
                 _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 6);
                 _tcmd_write_str(curr->usage ? curr->usage : "Command don't have any usage info.");
-                _tcmd_write_str("\r\n");
+                CRLF;
                 return;
             }
 
@@ -1527,7 +1569,8 @@ tcmd_print_usage(const char* name)
             _tcmd_write_str("Usage ");
             _tcmd_write_spaces(TCMD_NAME_COLUMN_WIDTH - 6);
             _tcmd_write_str(curr->usage ? curr->usage : "Command has usage info.");
-            _tcmd_write_str("\r\n");
+            
+            CRLF;
 
             return;
         }
