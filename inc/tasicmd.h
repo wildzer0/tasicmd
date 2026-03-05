@@ -115,14 +115,34 @@ TCMD_Result tcmd_set_custom_parser(TCMD_CustomParser parser);
 TCMD_Result tcmd_unpack(int argc, char** argv, char* fmt, ...);
 
 
+/**
+ * @brief Run the tasicmd engine. Must be called inside a super loop.
+ */
 void tcmd_run(void);
 
 
+
+/**
+ * @brief Print the usage of a command.
+ * 
+ * @param name Name of the command.
+ */
 void tcmd_print_usage(const char* name);
 
 
-// Hooks
+
+/**
+ * @brief Hook called before the command execution.
+ *        Must be implemented by the user.
+ */
 void tcmd_pre_execute(void);
+
+
+
+/**
+ * @brief Hook called after the command execution.
+ *        Must be implemented by the user.
+ */
 void tcmd_post_execute(void);
 
 
