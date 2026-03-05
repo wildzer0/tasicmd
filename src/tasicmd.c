@@ -168,7 +168,8 @@ _tcmd_write_str(const char* s)
 static void
 _tcmd_print_intro(void)
 {
-    _tcmd_write_str("\n\r");
+    CRLF;
+
     _tcmd_write_str(_tcmd.intro);
 }
 
@@ -176,7 +177,8 @@ _tcmd_print_intro(void)
 static void
 _tcmd_print_prompt(void)
 {
-    _tcmd_write_str("\n\r");
+    CRLF;
+
     _tcmd_write_str(_tcmd.prompt);
 }
 
@@ -1053,8 +1055,7 @@ _tcmd_handle_execute(void)
         _tcmd_history_save(_tcmd.line_buffer, _tcmd.line_pos);
 
         // Send CRLF
-        _tcmd.io.write('\r');
-        _tcmd.io.write('\n');
+        CRLF;
     
         // Call the pre execute
         tcmd_pre_execute();

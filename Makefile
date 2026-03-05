@@ -1,4 +1,4 @@
-LIB_NAME = libtasicmd.a
+LIB_NAME = libtcmd.a
 CC = gcc
 AR = ar
 CFLAGS = -Wall -Wextra -std=c99 -Iinc -g
