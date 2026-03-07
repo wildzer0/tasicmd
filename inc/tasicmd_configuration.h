@@ -9,7 +9,7 @@
 
 
 #ifndef TCMD_HISTORY_SIZE
-#define TCMD_HISTORY_SIZE (20)
+    #define TCMD_HISTORY_SIZE (20)
 #endif 
 
 
