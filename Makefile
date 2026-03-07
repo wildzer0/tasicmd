@@ -1,4 +1,5 @@
 LIB_NAME = libtcmd.a
+TOOLCHAIN =
 CC = gcc
 AR = ar
 CFLAGS = -Wall -Wextra -std=c99 -Iinc -g
@@ -17,15 +18,15 @@ LIB = $(BINDIR)/$(LIB_NAME)
 all: lib
 
 $(BINDIR):
-	mkdir -p $(BINDIR)
+	@mkdir -p $(BINDIR)
 
 $(OBJ): $(SRC) | $(BINDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	@$(TOOLCHAIN)$(CC) $(CFLAGS) -c $< -o $@
 
 lib: $(LIB)
 
 $(LIB): $(OBJ)
-	$(AR) $(ARFLAGS) $@ $^
+	@$(TOOLCHAIN)$(AR) $(ARFLAGS) $@ $^
 
 clean:
 	rm -rf $(BINDIR)
