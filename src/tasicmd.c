@@ -1048,25 +1048,24 @@ _tcmd_handle_execute(void)
 {
     if (_tcmd.line_pos > 0)
     {
-        // To avoid the buffer memset every time
         _tcmd.line_buffer[_tcmd.line_pos] = '\0';
 
-        // Save linebuffer into the history
+        // Save raw linebuffer into the history
         _tcmd_history_save(_tcmd.line_buffer, _tcmd.line_pos);
 
         // Send CRLF
         CRLF;
     
-        // Call the pre execute
+        // Call the pre execute hook
         tcmd_pre_execute();
     
-        // Execute
+        // Execute the commnad
         _tcmd_execute_line();
     
-        // Call the post execute
+        // Call the post execute hook
         tcmd_post_execute();
     
-        // Print the prompt
+        // Re-print the prompt
         _tcmd_print_prompt();
     }
 
