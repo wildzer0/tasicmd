@@ -58,6 +58,7 @@ typedef enum
     TCMD_STRING = 's', // char**    String (return the pointer to the token)
     TCMD_BOOL   = 'z', // bool*	    Boolean (0/1, on/off, true/false can be used)
     TCMD_CUSTOM = 'c', //           Custom parser    
+    TCMD_SKIP   = '_', //           Skip the current token
 } TCMD_FormatSpecifier;
 
 
@@ -1581,6 +1582,12 @@ tcmd_unpack(int argc, char** argv, char* fmt, ...)
                 result = TCMD_ERR_PARSE_CUSTOM_PARSER_IS_ABSENT;
             }
         } break;
+
+        case TCMD_SKIP:
+        {
+            // Skipt the current token
+        } break;
+
 
         default:
         {
