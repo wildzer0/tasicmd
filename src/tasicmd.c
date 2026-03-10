@@ -15,8 +15,13 @@
 #define CLEAR_LINE          _tcmd_write_str("\x1b[K")
 #define RESTORE_CURSOR_POS  _tcmd_write_str("\x1b[u")
 #define MOVE_CURSOR_RIGHT   _tcmd_write_str("\x1b[C")
+#define CLEAR_SCREEN        _tcmd_write_str("\x1b[2J")
+#define MOVE_CURSOR_UPLEFT  _tcmd_write_str("\x1b[H")
 #define MOVE_CURSOR_LEFT    _tcmd_write_str("\b")
 #define CRLF                _tcmd_write_str("\r\n")
+#define CR                  _tcmd_write_str("\r")
+#define WRITE_PROMPT        _tcmd_write_str(_tcmd.prompt)
+#define WRITE_BUFFER        _tcmd_write_str(_tcmd.line_buffer)
 
 
 
@@ -70,9 +75,12 @@ typedef enum
     TCMD_KEY_ENTER,
     TCMD_KEY_TAB,
     TCMD_KEY_DELETE,
-    TCMD_KEY_CLEAR,
+    TCMD_KEY_CLEAR_LINE,
     TCMD_KEY_HOME,
-    TCMD_KEY_END
+    TCMD_KEY_END,
+    TCMD_KEY_BACKGROUND,
+    TCMD_KEY_FOREGROUND,
+    TCMD_KEY_CLEAR,
 } TCMD_KeyEvent;
 
 
@@ -120,6 +128,8 @@ typedef struct
     char line_buffer[TCMD_LINE_BUFFER_SIZE];
     size_t line_pos;
     size_t cursor_pos;
+
+    bool in_background;
 
 
     TCMD_History history;
@@ -175,15 +185,15 @@ _tcmd_print_prompt(void)
 {
     CRLF;
 
-    _tcmd_write_str(_tcmd.prompt);
+    WRITE_PROMPT;
 }
 
 
 static void
 _tcmd_clear_line_visually(void)
 {
-    _tcmd_write_str("\r");
-    _tcmd_write_str(_tcmd.prompt);
+    CR;
+    WRITE_PROMPT;
     
     CLEAR_LINE;
 
@@ -221,12 +231,13 @@ _tcmd_parse_prepare(const char* str, int* base)
 
             return str + 2;
         }
-        else if (str[1] >= 0 && str[1] <= 7)
-        {
-            *base = 8;
+        #warning The octal parsing recognize a single 0 as octal number
+        // else if (str[1] >= 0 && str[1] <= 7)
+        // {
+        //     *base = 8;
 
-            return str + 1;
-        }
+        //     return str + 1;
+        // }
     }
 
     *base = 10;
@@ -718,7 +729,7 @@ _tcmd_render_history_line(const char* line)
     _tcmd.line_pos = strlen(_tcmd.line_buffer);
     _tcmd.cursor_pos = _tcmd.line_pos;
 
-    _tcmd_write_str(_tcmd.line_buffer);
+    WRITE_BUFFER;
 }
 
 
@@ -906,9 +917,12 @@ _tcmd_process_input(char c, char* out_char)
         if (c == 0x08 || c == 0x7F) return TCMD_KEY_BACKSPACE;
         if (c == '\r' || c == '\n') return TCMD_KEY_ENTER;
         if (c == '\t') return TCMD_KEY_TAB;
-        if (c == 0x15) return TCMD_KEY_CLEAR;
+        if (c == 0x15) return TCMD_KEY_CLEAR_LINE;
         if (c == 0x01) return TCMD_KEY_HOME;
         if (c == 0x05) return TCMD_KEY_END;
+        if (c == 0x02) return TCMD_KEY_BACKGROUND;
+        if (c == 0x06) return TCMD_KEY_FOREGROUND;
+        if (c == 0x0C) return TCMD_KEY_CLEAR;
 
         // Allowing only characters from space to ~
         if (c >= 0x20 && c <= 0x7E)
@@ -1132,10 +1146,10 @@ _tcmd_handle_delete(void)
 
 
 static void
-_tcmd_handle_clear(void)
+_tcmd_handle_clear_line(void)
 {
-    _tcmd_write_str("\r");
-    _tcmd_write_str(_tcmd.prompt);
+    CR;
+    WRITE_PROMPT;
     CLEAR_LINE;
 
     _tcmd.line_pos = 0;
@@ -1151,8 +1165,8 @@ _tcmd_handle_home(void)
     if (_tcmd.cursor_pos > 0)
     {
         _tcmd.cursor_pos = 0;
-        _tcmd_write_str("\r");
-        _tcmd_write_str(_tcmd.prompt);
+        CR;
+        WRITE_PROMPT;
     }
 }
 
@@ -1270,7 +1284,7 @@ _tcmd_handle_tab(void)
         CRLF;
         CRLF;
 
-        _tcmd_write_str(_tcmd.prompt);
+        WRITE_PROMPT;
 
         const char* the_reference = matches[0];
 
@@ -1278,11 +1292,49 @@ _tcmd_handle_tab(void)
 
         _tcmd_autocomplete(the_reference, input_len, rest, lcp, false);
 
-        _tcmd_write_str(_tcmd.line_buffer);
+        WRITE_BUFFER;
     }
 }
 
 
+
+static void
+_tcmd_handle_background(void)
+{
+    if (_tcmd.in_background == false)
+    {
+        _tcmd.in_background = true;
+        
+        CLEAR_SCREEN;
+        MOVE_CURSOR_UPLEFT;
+    }
+}
+
+
+
+static void
+_tcmd_handle_foreground(void)
+{
+    if (_tcmd.in_background == true)
+    {
+        _tcmd.in_background = false;
+
+        WRITE_PROMPT;
+        WRITE_BUFFER;
+    }
+}
+
+
+
+static void
+_tcmd_handle_clear(void)
+{
+    CLEAR_SCREEN;
+    MOVE_CURSOR_UPLEFT;
+
+    WRITE_PROMPT;
+    WRITE_BUFFER;
+}
 
 
 static void
@@ -1383,6 +1435,8 @@ tcmd_init (const TCMD_ModuleConfig* config)
 
     _tcmd.line_pos   = 0;
     _tcmd.cursor_pos = 0;
+
+    _tcmd.in_background = false;
 
 
     _tcmd.command_head = NULL;
@@ -1612,6 +1666,8 @@ tcmd_run(void)
 
     TCMD_KeyEvent key_evt = _tcmd_process_input(raw_c, &processed_c);
 
+    if (_tcmd.in_background == true && key_evt != TCMD_KEY_FOREGROUND) return;
+
     switch(key_evt)
     {
         case TCMD_KEY_CHAR:
@@ -1654,9 +1710,9 @@ tcmd_run(void)
             _tcmd_handle_delete();
         } break;
 
-        case TCMD_KEY_CLEAR:
+        case TCMD_KEY_CLEAR_LINE:
         {
-            _tcmd_handle_clear();
+            _tcmd_handle_clear_line();
         } break;
 
         case TCMD_KEY_HOME:
@@ -1673,6 +1729,22 @@ tcmd_run(void)
         {
             _tcmd_handle_tab();
         } break;
+
+        case TCMD_KEY_BACKGROUND:
+        {
+            _tcmd_handle_background();
+        } break;
+
+        case TCMD_KEY_FOREGROUND:
+        {
+            _tcmd_handle_foreground();
+        } break;
+
+        case TCMD_KEY_CLEAR:
+        {
+            _tcmd_handle_clear();
+        } break;
+
 
         default:
         {
