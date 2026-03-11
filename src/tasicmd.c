@@ -129,7 +129,7 @@ typedef struct
     size_t line_pos;
     size_t cursor_pos;
 
-    bool in_background;
+    bool is_visible;
 
 
     TCMD_History history;
@@ -1301,12 +1301,12 @@ _tcmd_handle_tab(void)
 static void
 _tcmd_handle_background(void)
 {
-    if (_tcmd.in_background == false)
+    if (_tcmd.is_visible == true)
     {
-        _tcmd.in_background = true;
-        
-        CLEAR_SCREEN;
-        MOVE_CURSOR_UPLEFT;
+        _tcmd.is_visible = false;
+
+        CR;
+        CLEAR_LINE;
     }
 }
 
@@ -1315,9 +1315,9 @@ _tcmd_handle_background(void)
 static void
 _tcmd_handle_foreground(void)
 {
-    if (_tcmd.in_background == true)
+    if (_tcmd.is_visible == false)
     {
-        _tcmd.in_background = false;
+        _tcmd.is_visible = true;
 
         WRITE_PROMPT;
         WRITE_BUFFER;
@@ -1436,7 +1436,7 @@ tcmd_init (const TCMD_ModuleConfig* config)
     _tcmd.line_pos   = 0;
     _tcmd.cursor_pos = 0;
 
-    _tcmd.in_background = false;
+    _tcmd.is_visible = true;
 
 
     _tcmd.command_head = NULL;
@@ -1666,7 +1666,7 @@ tcmd_run(void)
 
     TCMD_KeyEvent key_evt = _tcmd_process_input(raw_c, &processed_c);
 
-    if (_tcmd.in_background == true && key_evt != TCMD_KEY_FOREGROUND) return;
+    if (_tcmd.is_visible == false && key_evt != TCMD_KEY_FOREGROUND) return;
 
     switch(key_evt)
     {
@@ -1777,6 +1777,30 @@ tcmd_print_usage(const char* name)
         }
 
         curr = curr->next;
+    }
+}
+
+
+
+void
+tcmd_clear_prompt(void)
+{
+    if (_tcmd.is_visible == true)
+    {
+        CR;
+        CLEAR_LINE;
+    }
+}
+
+
+
+void
+tcmd_restore_prompt(void)
+{
+    if (_tcmd.is_visible == true)
+    {
+        WRITE_PROMPT;
+        WRITE_BUFFER;
     }
 }
 

@@ -130,6 +130,20 @@ void tcmd_run(void);
 void tcmd_print_usage(const char* name);
 
 
+/**
+ * @brief Clear the tasicmd current prompt. Used when a logger exist
+ *        and use the same communication channel of tascmd;
+ */
+void tcmd_clear_prompt(void);
+
+
+/**
+ * @brief Restore the previous cleared prompt. Used when a logger exist
+ *        and use the same communication channel of tascmd;
+ */
+void tcmd_restore_prompt(void);
+
+
 
 /**
  * @brief Hook called before the command execution.
